@@ -1,31 +1,30 @@
 package org.paul.tracker.webdav
 
 import java.security.cert.X509Certificate
-import java.util.concurrent.SynchronousQueue
-import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import okhttp3.Credentials
 import okhttp3.CookieJar
-import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class WebDavClient(
-    private val httpFactory: (insecureTls: Boolean) -> OkHttpClient = { insecure ->
-        defaultClient(insecure)
-    },
+    private val httpFactory: (insecureTls: Boolean) -> OkHttpClient = newDefaultHttpFactory(),
 ) {
     data class Config(
         val url: String,
         val username: String,
         val password: String,
         val insecureTls: Boolean = false,
-    )
+    ) {
+        // Password must never appear in logs (DESIGN logcat rule).
+        override fun toString(): String =
+            "Config(url=$url, username=$username, password=<redacted>, insecureTls=$insecureTls)"
+    }
 
     class HttpException(val code: Int, message: String) : RuntimeException(message)
 
@@ -65,6 +64,17 @@ class WebDavClient(
     }
 }
 
+internal fun newDefaultHttpFactory(): (Boolean) -> OkHttpClient {
+    val lock = Any()
+    val cached = arrayOfNulls<OkHttpClient>(2)
+    return { insecureTls ->
+        val i = if (insecureTls) 1 else 0
+        synchronized(lock) {
+            cached[i] ?: defaultClient(insecureTls).also { cached[i] = it }
+        }
+    }
+}
+
 internal fun defaultClient(insecureTls: Boolean): OkHttpClient {
     val builder = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -74,8 +84,6 @@ internal fun defaultClient(insecureTls: Boolean): OkHttpClient {
         .followSslRedirects(false)
         .cookieJar(CookieJar.NO_COOKIES)
         .cache(null)
-        // Non-daemon OkHttp dispatcher threads keep Gradle test workers alive after the suite.
-        .dispatcher(Dispatcher(webDavExecutor()))
     if (insecureTls) {
         val trustAll = TrustAllManager
         val sslContext = SSLContext.getInstance("TLS")
@@ -91,17 +99,6 @@ private fun rejectColonUsername(config: WebDavClient.Config) {
         throw IllegalArgumentException("username must not contain ':'")
     }
 }
-
-private fun webDavExecutor(): ThreadPoolExecutor =
-    ThreadPoolExecutor(
-        0,
-        Int.MAX_VALUE,
-        60,
-        TimeUnit.SECONDS,
-        SynchronousQueue(),
-    ) { runnable ->
-        Thread(runnable, "WebDav OkHttp").apply { isDaemon = true }
-    }
 
 private object TrustAllManager : X509TrustManager {
     override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}

@@ -6,19 +6,33 @@ import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
+import org.junit.AfterClass
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 class WebDavClientTest {
+    companion object {
+        private val defaultFactory = newDefaultHttpFactory()
+
+        @JvmStatic
+        @AfterClass
+        fun shutdownDefaultFactory() {
+            discard(defaultFactory(false))
+        }
+    }
+
     private lateinit var server: MockWebServer
-    private val client = WebDavClient()
+    private val client = WebDavClient(defaultFactory)
 
     @Before
     fun setUp() {
@@ -145,11 +159,47 @@ class WebDavClientTest {
             }
             assertFalse(secureTrustsAll)
         } finally {
-            secure.dispatcher.executorService.shutdown()
-            secure.connectionPool.evictAll()
-            insecure.dispatcher.executorService.shutdown()
-            insecure.connectionPool.evictAll()
+            discard(secure)
+            discard(insecure)
         }
+    }
+
+    @Test
+    fun `T-default-factory-caches-per-insecureTls`() {
+        val factory = newDefaultHttpFactory()
+        val secure1 = factory(false)
+        val secure2 = factory(false)
+        val insecure1 = factory(true)
+        val insecure2 = factory(true)
+        try {
+            assertSame(secure1, secure2)
+            assertSame(insecure1, insecure2)
+            assertNotSame(secure1, insecure1)
+        } finally {
+            discard(secure1)
+            discard(insecure1)
+        }
+    }
+
+    @Test
+    fun `T-config-toString-redacts-password`() {
+        val cfg = WebDavClient.Config(
+            url = "https://nas.example/tracker.json",
+            username = "paul",
+            password = "app-password-xyz",
+            insecureTls = true,
+        )
+        val text = cfg.toString()
+        assertFalse(text.contains("app-password-xyz"))
+        assertTrue(text.contains("<redacted>"))
+        assertTrue(text.contains("paul"))
+        assertTrue(text.contains("https://nas.example/tracker.json"))
+        assertTrue(text.contains("insecureTls=true"))
+        val same = cfg.copy()
+        val otherPass = cfg.copy(password = "other")
+        assertEquals(cfg, same)
+        assertEquals(cfg.hashCode(), same.hashCode())
+        assertNotEquals(cfg, otherPass)
     }
 
     private fun config() = WebDavClient.Config(
@@ -157,4 +207,9 @@ class WebDavClientTest {
         username = "paul",
         password = "secret",
     )
+}
+
+private fun discard(client: OkHttpClient) {
+    client.dispatcher.executorService.shutdown()
+    client.connectionPool.evictAll()
 }
