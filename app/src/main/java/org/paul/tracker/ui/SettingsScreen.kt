@@ -17,6 +17,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,10 @@ fun SettingsScreen(
     var confirmBackup by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
+    var replaceLocked by remember { mutableStateOf(false) }
+    LaunchedEffect(restoreNeedsExtraConfirm) {
+        if (restoreNeedsExtraConfirm) replaceLocked = false
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -168,7 +173,13 @@ fun SettingsScreen(
             onDismissRequest = onCancelEmptyRestore,
             text = { Text("Server copy has 0 samples. Replace local data anyway?") },
             confirmButton = {
-                TextButton(onClick = onConfirmEmptyRestore) { Text("Replace") }
+                TextButton(
+                    enabled = !replaceLocked,
+                    onClick = {
+                        replaceLocked = true
+                        onConfirmEmptyRestore()
+                    },
+                ) { Text("Replace") }
             },
             dismissButton = {
                 TextButton(onClick = onCancelEmptyRestore) { Text("Cancel") }

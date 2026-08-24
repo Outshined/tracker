@@ -1,10 +1,12 @@
 package org.paul.tracker.data
 
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.time.Instant
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -158,6 +160,25 @@ class ConfigStoreTest {
         assertTrue(text.contains("paul"))
         assertEquals(state, state.copy())
         assertNotEquals(state, state.copy(password = "other"))
+    }
+
+    @Test
+    fun `onBeforeCommitFile throw leaves memory and destination unchanged`() {
+        val store = ConfigStore(file)
+        store.persist(ConfigStore.State(url = "https://ok.example/t.json", username = "paul"))
+        val failing = ConfigStore(
+            file,
+            onBeforeCommitFile = { throw IOException("injected") },
+        )
+        failing.load()
+        assertThrows(IOException::class.java) {
+            failing.persist(failing.snapshot().copy(password = "secret"))
+        }
+        assertEquals("", failing.snapshot().password)
+        assertEquals("https://ok.example/t.json", failing.snapshot().url)
+        val onDisk = ConfigStore(file).load()
+        assertEquals("https://ok.example/t.json", onDisk.url)
+        assertEquals("", onDisk.password)
     }
 
     @Test

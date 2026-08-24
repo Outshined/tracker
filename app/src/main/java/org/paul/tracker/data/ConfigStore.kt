@@ -16,7 +16,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 
-class ConfigStore(private val file: File) {
+class ConfigStore(
+    private val file: File,
+    /** Invoked after tmp+sync, before ATOMIC_MOVE. Tests throw here to prove rollback. */
+    private val onBeforeCommitFile: () -> Unit = {},
+    /** Invoked under lock before transform so tests can mutate VM credentials. */
+    private val onBeforeTransform: () -> Unit = {},
+) {
     data class State(
         val url: String = "",
         val username: String = "",
@@ -57,6 +63,7 @@ class ConfigStore(private val file: File) {
     fun persist(next: State): State = update { next }
 
     fun update(transform: (State) -> State): State = synchronized(lock) {
+        onBeforeTransform()
         val next = transform(state)
         writeFile(next)
         state = next
@@ -70,6 +77,7 @@ class ConfigStore(private val file: File) {
             out.flush()
             out.fd.sync()
         }
+        onBeforeCommitFile()
         try {
             Files.move(
                 tmp.toPath(),
