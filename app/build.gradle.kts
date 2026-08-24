@@ -13,6 +13,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -43,4 +44,9 @@ dependencies {
     implementation(project(":webdav"))
 
     testImplementation("junit:junit:4.13.2")
+
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation(composeBom)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
