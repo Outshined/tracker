@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
@@ -23,6 +24,8 @@ import org.paul.tracker.data.Snapshot
 import org.paul.tracker.data.Store
 import org.paul.tracker.data.mergeEditedMetric
 import org.paul.tracker.data.mergeEditedSample
+import org.paul.tracker.stats.AverageMode
+import org.paul.tracker.stats.RangePreset
 import org.paul.tracker.stats.defaultSelectedMetricIds
 import org.paul.tracker.stats.formatLocaleNumber
 import org.paul.tracker.stats.parseRequiredFields
@@ -53,6 +56,10 @@ data class AppUiState(
     val addLabel: String = "",
     val addFields: List<FieldForm> = listOf(FieldForm()),
     val graphSelectedIds: Set<String> = emptySet(),
+    val rangePreset: RangePreset = RangePreset.D7,
+    val customFrom: LocalDate? = null,
+    val customTo: LocalDate? = null,
+    val averageMode: AverageMode = AverageMode.Off,
 )
 
 fun validateMetricForm(label: String, fields: List<FieldForm>): String? {
@@ -88,8 +95,34 @@ class AppViewModel(
         }
     }
 
+    fun now(): Instant = clock.now()
+
     fun selectTab(tab: Tab) {
         _state.update { it.copy(tab = tab) }
+    }
+
+    fun toggleGraphMetric(id: String) {
+        _state.update { s ->
+            val next =
+                if (id in s.graphSelectedIds) s.graphSelectedIds - id else s.graphSelectedIds + id
+            s.copy(graphSelectedIds = next)
+        }
+    }
+
+    fun setRangePreset(preset: RangePreset) {
+        _state.update { it.copy(rangePreset = preset) }
+    }
+
+    fun setCustomFrom(date: LocalDate) {
+        _state.update { it.copy(customFrom = date) }
+    }
+
+    fun setCustomTo(date: LocalDate) {
+        _state.update { it.copy(customTo = date) }
+    }
+
+    fun setAverageMode(mode: AverageMode) {
+        _state.update { it.copy(averageMode = mode) }
     }
 
     fun openAddMetric() {

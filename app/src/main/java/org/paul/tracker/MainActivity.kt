@@ -31,6 +31,7 @@ import androidx.lifecycle.ViewModelProvider
 import org.paul.tracker.data.LoadState
 import org.paul.tracker.ui.AddMetricScreen
 import org.paul.tracker.ui.EntryScreen
+import org.paul.tracker.ui.GraphScreen
 import org.paul.tracker.ui.MetricListScreen
 import org.paul.tracker.ui.TrackerTheme
 
@@ -112,7 +113,22 @@ private fun TrackerScaffold(vm: AppViewModel) {
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         when (state.tab) {
                             Tab.Metrics -> MetricsTab(vm, state)
-                            Tab.Graphs -> PlaceholderTab("Graphs")
+                            Tab.Graphs -> GraphScreen(
+                                metrics = state.snapshot.metrics,
+                                samples = state.snapshot.samples,
+                                selectedIds = state.graphSelectedIds,
+                                rangePreset = state.rangePreset,
+                                customFrom = state.customFrom,
+                                customTo = state.customTo,
+                                averageMode = state.averageMode,
+                                now = vm.now(),
+                                zone = vm.zone,
+                                onToggleMetric = vm::toggleGraphMetric,
+                                onRangePreset = vm::setRangePreset,
+                                onCustomFrom = vm::setCustomFrom,
+                                onCustomTo = vm::setCustomTo,
+                                onAverageMode = vm::setAverageMode,
+                            )
                             Tab.Settings -> PlaceholderTab("Settings")
                         }
                     }

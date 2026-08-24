@@ -3,6 +3,7 @@ package org.paul.tracker
 import java.io.File
 import java.nio.file.Files
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.ArrayDeque
 import java.util.Locale
@@ -30,6 +31,8 @@ import org.paul.tracker.data.MetricDef
 import org.paul.tracker.data.Sample
 import org.paul.tracker.data.Sources
 import org.paul.tracker.data.Store
+import org.paul.tracker.stats.AverageMode
+import org.paul.tracker.stats.RangePreset
 import org.paul.tracker.stats.defaultSelectedMetricIds
 
 class AppViewModelTest {
@@ -360,6 +363,27 @@ class AppViewModelTest {
         assertEquals(MetricsSub.Entry, vm.state.value.metricsSub)
         assertEquals("180", vm.state.value.entryFieldText["lb"])
         assertEquals("weight", vm.state.value.entryMetricId)
+    }
+
+    @Test
+    fun `graph chips update selection range and average mode`() {
+        createVm()
+        io.runAll()
+        assertEquals(RangePreset.D7, vm.state.value.rangePreset)
+        assertEquals(AverageMode.Off, vm.state.value.averageMode)
+        assertEquals(t0, vm.now())
+        vm.toggleGraphMetric("weight")
+        assertFalse("weight" in vm.state.value.graphSelectedIds)
+        vm.toggleGraphMetric("weight")
+        assertTrue("weight" in vm.state.value.graphSelectedIds)
+        vm.setRangePreset(RangePreset.Custom)
+        vm.setCustomFrom(LocalDate.of(2026, 8, 20))
+        vm.setCustomTo(LocalDate.of(2026, 8, 20))
+        vm.setAverageMode(AverageMode.Weekly)
+        assertEquals(RangePreset.Custom, vm.state.value.rangePreset)
+        assertEquals(LocalDate.of(2026, 8, 20), vm.state.value.customFrom)
+        assertEquals(LocalDate.of(2026, 8, 20), vm.state.value.customTo)
+        assertEquals(AverageMode.Weekly, vm.state.value.averageMode)
     }
 
     @Test
