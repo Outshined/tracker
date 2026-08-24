@@ -12,7 +12,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-class WebDavClient(
+open class WebDavClient(
     private val httpFactory: (insecureTls: Boolean) -> OkHttpClient = newDefaultHttpFactory(),
 ) {
     data class Config(
@@ -29,7 +29,7 @@ class WebDavClient(
     class HttpException(val code: Int, message: String) : RuntimeException(message)
 
     /** 404 → null. 3xx and other non-2xx → HttpException. */
-    fun get(config: Config): ByteArray? {
+    open fun get(config: Config): ByteArray? {
         rejectColonUsername(config)
         val request = Request.Builder()
             .url(config.url)
@@ -47,7 +47,7 @@ class WebDavClient(
     }
 
     /** 2xx only (200/201/204). */
-    fun put(config: Config, body: ByteArray) {
+    open fun put(config: Config, body: ByteArray) {
         rejectColonUsername(config)
         val request = Request.Builder()
             .url(config.url)

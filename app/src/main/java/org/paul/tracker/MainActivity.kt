@@ -33,6 +33,7 @@ import org.paul.tracker.ui.AddMetricScreen
 import org.paul.tracker.ui.EntryScreen
 import org.paul.tracker.ui.GraphScreen
 import org.paul.tracker.ui.MetricListScreen
+import org.paul.tracker.ui.SettingsScreen
 import org.paul.tracker.ui.TrackerTheme
 
 class MainActivity : ComponentActivity() {
@@ -129,7 +130,7 @@ private fun TrackerScaffold(vm: AppViewModel) {
                                 onCustomTo = vm::setCustomTo,
                                 onAverageMode = vm::setAverageMode,
                             )
-                            Tab.Settings -> PlaceholderTab("Settings")
+                            Tab.Settings -> SettingsTab(vm, state)
                         }
                     }
                 }
@@ -205,10 +206,31 @@ private fun MetricsTab(vm: AppViewModel, state: AppUiState) {
 }
 
 @Composable
-private fun PlaceholderTab(name: String) {
-    Box(Modifier.fillMaxSize().padding(16.dp)) {
-        Text(name)
-    }
+private fun SettingsTab(vm: AppViewModel, state: AppUiState) {
+    val davValid = validateDavConfig(state.settingsUrl, state.settingsUser) == null
+    SettingsScreen(
+        url = state.settingsUrl,
+        username = state.settingsUser,
+        password = state.settingsPass,
+        insecureTls = state.settingsInsecureTls,
+        lastBackupAt = state.lastBackupAt,
+        lastRestoreAt = state.lastRestoreAt,
+        lastError = state.lastError,
+        backupEnabled = backupEnabled(state.load, state.davInFlight) && davValid,
+        restoreEnabled = !state.davInFlight && davValid,
+        davInFlight = state.davInFlight,
+        restoreNeedsExtraConfirm = state.restoreNeedsExtraConfirm,
+        showReset = state.load is LoadState.Corrupt,
+        onUrlChange = { vm.setSettingsUrl(it) },
+        onUserChange = { vm.setSettingsUser(it) },
+        onPassChange = { vm.setSettingsPass(it) },
+        onInsecureChange = { vm.setSettingsInsecureTls(it) },
+        onBackup = { vm.backup() },
+        onRestore = { vm.restore() },
+        onConfirmEmptyRestore = { vm.confirmEmptyRestore() },
+        onCancelEmptyRestore = { vm.cancelEmptyRestore() },
+        onReset = { vm.resetLocalData() },
+    )
 }
 
 @Composable

@@ -166,17 +166,28 @@ class Store(
 
     fun resetLocalData() {
         synchronized(lock) {
-            if (file.exists()) {
-                Files.copy(file.toPath(), corrupt.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
-            if (bak.exists()) {
-                Files.copy(bak.toPath(), bakCorrupt.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
+            copyUnreadableToCorruptUnlocked()
             file.delete()
             bak.delete()
             tmp.delete()
             trustedLiveFile = false
             persist(seedSnapshot())
+        }
+    }
+
+    /** Restore-from-Corrupt set-aside: reset steps 1–2, no seed, so replaceAll does not copy garbage onto bak. */
+    fun copyUnreadableToCorrupt() {
+        synchronized(lock) {
+            copyUnreadableToCorruptUnlocked()
+        }
+    }
+
+    private fun copyUnreadableToCorruptUnlocked() {
+        if (file.exists()) {
+            Files.copy(file.toPath(), corrupt.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+        if (bak.exists()) {
+            Files.copy(bak.toPath(), bakCorrupt.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 

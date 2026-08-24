@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import java.io.File
+import java.io.IOException
+import java.io.InterruptedIOException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -17,7 +19,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.paul.tracker.data.Clock
+import org.paul.tracker.data.ConfigStore
 import org.paul.tracker.data.FieldDef
+import org.paul.tracker.data.JsonCodec
 import org.paul.tracker.data.LoadState
 import org.paul.tracker.data.MetricDef
 import org.paul.tracker.data.Snapshot
@@ -30,6 +34,7 @@ import org.paul.tracker.stats.defaultSelectedMetricIds
 import org.paul.tracker.stats.formatLocaleNumber
 import org.paul.tracker.stats.parseRequiredFields
 import org.paul.tracker.stats.selectionAfterDelete
+import org.paul.tracker.webdav.WebDavClient
 
 enum class Tab { Metrics, Graphs, Settings }
 
@@ -60,6 +65,15 @@ data class AppUiState(
     val customFrom: LocalDate? = null,
     val customTo: LocalDate? = null,
     val averageMode: AverageMode = AverageMode.Off,
+    val settingsUrl: String = "",
+    val settingsUser: String = "",
+    val settingsPass: String = "",
+    val settingsInsecureTls: Boolean = false,
+    val lastBackupAt: Instant? = null,
+    val lastRestoreAt: Instant? = null,
+    val lastError: String = "",
+    val davInFlight: Boolean = false,
+    val restoreNeedsExtraConfirm: Boolean = false,
 )
 
 fun validateMetricForm(label: String, fields: List<FieldForm>): String? {
@@ -69,8 +83,27 @@ fun validateMetricForm(label: String, fields: List<FieldForm>): String? {
     return null
 }
 
+fun validateDavConfig(url: String, username: String): String? {
+    val trimmedUrl = url.trim()
+    val http = trimmedUrl.startsWith("http://", ignoreCase = true)
+    val https = trimmedUrl.startsWith("https://", ignoreCase = true)
+    if (!http && !https) return "URL must be http or https"
+    val user = username.trim()
+    if (user.isEmpty()) return "Username is required."
+    if (user.contains(':')) return "Username must not contain ':'"
+    return null
+}
+
+fun backupEnabled(load: LoadState, davInFlight: Boolean = false): Boolean =
+    load is LoadState.Ready && !davInFlight
+
+fun shouldExtraConfirm(localCount: Int, remoteCount: Int): Boolean =
+    localCount > 0 && remoteCount == 0
+
 class AppViewModel(
     private val store: Store,
+    private val config: ConfigStore,
+    private val webDav: WebDavClient,
     private val clock: Clock,
     val zone: ZoneId,
     private val io: CoroutineDispatcher = Dispatchers.IO,
@@ -79,8 +112,12 @@ class AppViewModel(
     private val _state = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = _state.asStateFlow()
 
+    private val davLock = Any()
+    private var pendingRestore: Snapshot? = null
+
     init {
         viewModelScope.launch(io) {
+            val cfg = config.load()
             val load = store.load()
             val snap = store.snapshot()
             _state.update { prev ->
@@ -90,7 +127,18 @@ class AppViewModel(
                     } else {
                         prev.graphSelectedIds
                     }
-                prev.copy(load = load, snapshot = snap, graphSelectedIds = selected)
+                prev.copy(
+                    load = load,
+                    snapshot = snap,
+                    graphSelectedIds = selected,
+                    settingsUrl = cfg.url,
+                    settingsUser = cfg.username,
+                    settingsPass = cfg.password,
+                    settingsInsecureTls = cfg.insecureTls,
+                    lastBackupAt = cfg.lastBackupAt,
+                    lastRestoreAt = cfg.lastRestoreAt,
+                    lastError = cfg.lastError,
+                )
             }
         }
     }
@@ -415,25 +463,216 @@ class AppViewModel(
         }
     }
 
-    private fun applyCatalogReset(snap: Snapshot) {
+    fun setSettingsUrl(value: String) {
+        _state.update { it.copy(settingsUrl = value) }
+        persistSettings()
+    }
+
+    fun setSettingsUser(value: String) {
+        _state.update { it.copy(settingsUser = value) }
+        persistSettings()
+    }
+
+    fun setSettingsPass(value: String) {
+        _state.update { it.copy(settingsPass = value) }
+        persistSettings()
+    }
+
+    fun setSettingsInsecureTls(value: Boolean) {
+        _state.update { it.copy(settingsInsecureTls = value) }
+        persistSettings()
+    }
+
+    fun backup() {
+        val current = _state.value
+        if (current.davInFlight) return
+        if (!backupEnabled(current.load, current.davInFlight)) return
+        if (validateDavConfig(current.settingsUrl, current.settingsUser) != null) return
+        _state.update { it.copy(davInFlight = true) }
+        viewModelScope.launch(io) {
+            try {
+                val bytes = JsonCodec.encode(store.dump()).toByteArray(Charsets.UTF_8)
+                webDav.put(davConfig(), bytes)
+            } catch (e: Exception) {
+                failDav(formatDavError(e))
+                return@launch
+            }
+            val now = clock.now()
+            _state.update {
+                it.copy(lastBackupAt = now, lastError = "", davInFlight = false)
+            }
+            try {
+                persistConfig { it.copy(lastBackupAt = now, lastError = "") }
+            } catch (e: Exception) {
+                _state.update { it.copy(lastError = formatDavError(e)) }
+            }
+        }
+    }
+
+    fun restore() {
+        val current = _state.value
+        if (current.davInFlight) return
+        if (validateDavConfig(current.settingsUrl, current.settingsUser) != null) return
+        _state.update { it.copy(davInFlight = true, restoreNeedsExtraConfirm = false) }
+        viewModelScope.launch(io) {
+            runRestore()
+        }
+    }
+
+    fun confirmEmptyRestore() {
+        val snapshot = synchronized(davLock) {
+            if (!_state.value.restoreNeedsExtraConfirm) return
+            val pending = pendingRestore ?: return
+            pendingRestore = null
+            _state.update { it.copy(restoreNeedsExtraConfirm = false) }
+            pending
+        }
+        viewModelScope.launch(io) {
+            commitRestore(snapshot)
+        }
+    }
+
+    fun cancelEmptyRestore() {
+        synchronized(davLock) {
+            if (!_state.value.restoreNeedsExtraConfirm) return
+            pendingRestore = null
+            _state.update { it.copy(davInFlight = false, restoreNeedsExtraConfirm = false) }
+        }
+    }
+
+    private fun runRestore() {
+        try {
+            val bytes = webDav.get(davConfig())
+            if (bytes == null) {
+                failDav("No backup at that URL")
+                return
+            }
+            val decoded = try {
+                JsonCodec.decode(String(bytes, Charsets.UTF_8))
+            } catch (_: Exception) {
+                failDav("Server file is not a valid dump")
+                return
+            }
+            val localCount = store.snapshot().samples.size
+            if (shouldExtraConfirm(localCount, decoded.samples.size)) {
+                synchronized(davLock) {
+                    pendingRestore = decoded
+                    _state.update { it.copy(restoreNeedsExtraConfirm = true) }
+                }
+                return
+            }
+            commitRestore(decoded)
+        } catch (e: Exception) {
+            failDav(formatDavError(e))
+        }
+    }
+
+    private fun commitRestore(snapshot: Snapshot) {
+        try {
+            if (_state.value.load is LoadState.Corrupt) {
+                store.copyUnreadableToCorrupt()
+            }
+            store.replaceAll(snapshot)
+        } catch (e: Exception) {
+            failDav(formatDavError(e))
+            return
+        }
+        val now = clock.now()
+        synchronized(davLock) {
+            pendingRestore = null
+        }
         _state.update {
-            it.copy(
-                load = LoadState.Ready,
-                snapshot = snap,
-                storeError = null,
-                formError = null,
-                metricsSub = MetricsSub.List,
-                entryMetricId = null,
-                entrySampleId = null,
-                entryFieldText = emptyMap(),
-                entryRecordedAt = clock.now(),
-                entryError = null,
-                addLabel = "",
-                addFields = listOf(FieldForm()),
-                graphSelectedIds = defaultSelectedMetricIds(snap.metrics, snap.samples).toSet(),
+            it.withCatalogReset(snapshot).copy(
+                lastRestoreAt = now,
+                lastError = "",
+                davInFlight = false,
+                restoreNeedsExtraConfirm = false,
+            )
+        }
+        try {
+            persistConfig { it.copy(lastRestoreAt = now, lastError = "") }
+        } catch (e: Exception) {
+            _state.update { it.copy(lastError = formatDavError(e)) }
+        }
+    }
+
+    private fun persistSettings() {
+        viewModelScope.launch(io) {
+            try {
+                persistConfig { it }
+            } catch (e: Exception) {
+                _state.update { it.copy(lastError = formatDavError(e)) }
+            }
+        }
+    }
+
+    private fun persistConfig(transform: (ConfigStore.State) -> ConfigStore.State): ConfigStore.State {
+        return config.update { prev ->
+            val s = _state.value
+            transform(
+                prev.copy(
+                    url = s.settingsUrl,
+                    username = s.settingsUser,
+                    password = s.settingsPass,
+                    insecureTls = s.settingsInsecureTls,
+                ),
             )
         }
     }
+
+    private fun failDav(message: String) {
+        synchronized(davLock) {
+            pendingRestore = null
+        }
+        try {
+            persistConfig { it.copy(lastError = message) }
+        } catch (_: Exception) {
+            // lastError still published on the VM below
+        }
+        _state.update {
+            it.copy(lastError = message, davInFlight = false, restoreNeedsExtraConfirm = false)
+        }
+    }
+
+    private fun davConfig(): WebDavClient.Config {
+        val s = _state.value
+        return WebDavClient.Config(
+            url = s.settingsUrl.trim(),
+            username = s.settingsUser.trim(),
+            password = s.settingsPass,
+            insecureTls = s.settingsInsecureTls,
+        )
+    }
+
+    private fun formatDavError(e: Throwable): String = when (e) {
+        is WebDavClient.HttpException -> "HTTP ${e.code}"
+        is InterruptedIOException -> "timeout"
+        is IOException -> "IO ${e.message ?: e.javaClass.simpleName}"
+        else -> e.message ?: e.javaClass.simpleName
+    }
+
+    private fun applyCatalogReset(snap: Snapshot) {
+        synchronized(davLock) {
+            pendingRestore = null
+        }
+        _state.update { it.withCatalogReset(snap) }
+    }
+
+    private fun AppUiState.withCatalogReset(snap: Snapshot): AppUiState = copy(
+        load = LoadState.Ready,
+        snapshot = snap,
+        storeError = null,
+        formError = null,
+        metricsSub = MetricsSub.List,
+        entryMetricId = null,
+        entrySampleId = null,
+        entryFieldText = emptyMap(),
+        entryRecordedAt = clock.now(),
+        entryError = null,
+        addLabel = "",
+        addFields = listOf(FieldForm()),
+        graphSelectedIds = defaultSelectedMetricIds(snap.metrics, snap.samples).toSet(),
+    )
 }
 
 class AppViewModelFactory(
@@ -443,8 +682,11 @@ class AppViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val clock = app.clock
         val store = Store(File(app.filesDir, "store.json"), clock)
+        val config = ConfigStore(File(app.filesDir, "webdav.json"))
         return AppViewModel(
             store = store,
+            config = config,
+            webDav = WebDavClient(),
             clock = clock,
             zone = ZoneId.systemDefault(),
         ) as T

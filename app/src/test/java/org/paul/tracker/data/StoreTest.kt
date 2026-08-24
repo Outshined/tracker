@@ -370,6 +370,23 @@ class StoreTest {
     }
 
     @Test
+    fun `copyUnreadableToCorrupt copies live and bak without seeding`() {
+        val liveGarbage = "LIVE GARBAGE"
+        val bakGarbage = "BAK GARBAGE"
+        file.writeText(liveGarbage)
+        bak.writeText(bakGarbage)
+        val store = Store(file, clock(t0))
+        assertEquals(LoadState.Corrupt("Local data file is unreadable."), store.load())
+        store.copyUnreadableToCorrupt()
+        assertEquals(liveGarbage, corrupt.readText())
+        assertEquals(bakGarbage, bakCorrupt.readText())
+        assertEquals(liveGarbage, file.readText())
+        assertEquals(bakGarbage, bak.readText())
+        assertEquals(emptyList<MetricDef>(), store.metrics())
+        assertFalse(file.readText().contains("weight"))
+    }
+
+    @Test
     fun `leftover tmp deleted not parsed`() {
         tmp.writeText(
             JsonCodec.encode(
