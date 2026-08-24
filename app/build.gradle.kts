@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "org.paul.tracker"
+    namespace = "org.bohme.tracker"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.paul.tracker"
+        applicationId = "org.bohme.tracker"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

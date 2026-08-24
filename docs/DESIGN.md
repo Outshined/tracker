@@ -7,7 +7,7 @@
 | **Date** | 2026-08-24 |
 | **Status** | Approved |
 | **Workspace** | `/home/paul/src/tracker` (empty greenfield) |
-| **Application id / package** | `org.paul.tracker` (decided) |
+| **Application id / package** | `org.bohme.tracker` (decided) |
 | **Launcher name** | Tracker (decided) |
 
 This document is the implementation contract. An engineer should not need to invent product behavior. OQ-2/3/4 (glucose unit, weight unit, pulse) are **resolved** below; there are no remaining Open Questions.
@@ -28,7 +28,7 @@ Local truth is an atomic JSON file in app-private storage. WebDAV is backup and 
 |---|---|---|
 | KD-1 | **Kotlin + Jetpack Compose + Material 3.** Single-activity `MainActivity`. No XML UI, no Fragments, **no `navigation-compose`**. Padding is `16.dp` via `Modifier`. | Default Android UI stack. Three tabs + one optional Metrics sub-screen fit in `AppViewModel` state. A Navigation graph is a second back-stack model. |
 | KD-2 | **`minSdk 26`, `targetSdk` / `compileSdk` 36.** JDK 17. | `java.time` without core-library desugaring. Bump compile/target to current stable if 36 is already superseded at implementation. |
-| KD-3 | **Package / applicationId `org.paul.tracker`. Launcher label `Tracker`.** Two Gradle modules: `:app` and `:webdav` (`:webdav` added in PR-4, not PR-1). | Workspace is `/home/paul/src/tracker`. `:webdav` is a pure JVM OkHttp helper. |
+| KD-3 | **Package / applicationId `org.bohme.tracker`. Launcher label `Tracker`.** Two Gradle modules: `:app` and `:webdav` (`:webdav` added in PR-4, not PR-1). | Workspace is `/home/paul/src/tracker`. `:webdav` is a pure JVM OkHttp helper. |
 | KD-4 | **Local store = one pretty-printed JSON file** `filesDir/store.json`, loaded fully into memory. No SQLite, no Room, no DataStore for samples. | Health volume is tiny. The dump format *is* the live format. |
 | KD-5 | **WebDAV = thin OkHttp client** (`GET`/`PUT` of one file URL, HTTP Basic). **`followRedirects = false`**. Not sardine-android. No PROPFIND, LOCK, COPY, MKCOL in v1. | We need overwrite-a-known-path. 3xx is `HttpException` (no cross-host Basic leak). |
 | KD-6 | **Charts = Compose `Canvas` + pure plot math** (`downsample`, `bucketMeans`, `project` returning `Px`, not Compose `Offset`). No Vico/MPAndroidChart in v1. | Range is a data filter. JVM tests must not need Compose. |
@@ -218,9 +218,9 @@ flowchart TB
 v1 does not talk to hardware. Every **new or edited** sample, regardless of origin, is an upsert:
 
 ```kotlin
-package org.paul.tracker.ingest
+package org.bohme.tracker.ingest
 
-import org.paul.tracker.data.Sample
+import org.bohme.tracker.data.Sample
 
 /**
  * Insert or replace a sample by [Sample.id].
@@ -363,9 +363,9 @@ After successful `deleteMetric(id)`: `graphSelectedIds = selectionAfterDelete(gr
 `Store` is the only mutator of samples and metrics. Blocking, thread-safe. **Never call any `Store` method from the main thread** (constructor excluded). UI does not call `snapshot()` on main; it collects the VM `StateFlow`.
 
 ```kotlin
-package org.paul.tracker.data
+package org.bohme.tracker.data
 
-import org.paul.tracker.ingest.SampleWriter
+import org.bohme.tracker.ingest.SampleWriter
 import java.io.File
 
 fun interface Clock {
@@ -516,7 +516,7 @@ Validate before Backup/Restore: URL must be `http` or `https`; username must be 
 ### WebDAV client (`:webdav`)
 
 ```kotlin
-package org.paul.tracker.webdav
+package org.bohme.tracker.webdav
 
 class WebDavClient(
     private val httpFactory: (insecureTls: Boolean) -> OkHttpClient = { insecure ->
@@ -893,7 +893,7 @@ Manifest: `INTERNET`; `android:name=".TrackerApp"`; `allowBackup=false`; `androi
 Greenfield. Frozen types in `Models.kt`:
 
 ```kotlin
-package org.paul.tracker.data
+package org.bohme.tracker.data
 
 import java.time.Instant
 import kotlinx.serialization.json.JsonElement
@@ -1299,7 +1299,7 @@ Standing rule: no functionality without tests. No live WebDAV. PRs 1–8 are JVM
 
 **Also closed (do not re-open):**
 
-- Package `org.paul.tracker`, launcher `Tracker`.
+- Package `org.bohme.tracker`, launcher `Tracker`.
 - Restore = whole-file replace (KD-11). Two-device union is a non-goal.
 - Backup always confirms overwrite.
 - Metric defs: label/unit editable; ids/field-count immutable.
@@ -1333,7 +1333,7 @@ Each PR is independently reviewable and mergeable. Tests land in the same PR as 
 - **Title:** Add Kotlin Compose project skeleton for Tracker
 - **Files/components:** `settings.gradle.kts` **`include(":app")` only**, root/`app` Gradle, `gradle.properties`, `AndroidManifest.xml`, empty `TrackerApp.kt` (`Application()` + `clock`), `MainActivity.kt` (Material 3 scaffold “Tracker”, three placeholder tabs, no VM), `Theme.kt`, `res/xml/data_extraction_rules.xml`, `res/xml/backup_rules.xml`, `app/src/test` `1+1`, `.gitignore` (`build/`, `.gradle`, `local.properties`, `.idea`, `*.iml`)
 - **Depends on:** nothing
-- **Changes:** applicationId `org.paul.tracker`, minSdk 26, compile/target 36, Compose BOM, **no** navigation-compose, **no** `:webdav`, **no** Store. `allowBackup=false`. App launches to a blank scaffold.
+- **Changes:** applicationId `org.bohme.tracker`, minSdk 26, compile/target 36, Compose BOM, **no** navigation-compose, **no** `:webdav`, **no** Store. `allowBackup=false`. App launches to a blank scaffold.
 
 ### PR-2 — Models, built-in metrics, JSON codec
 

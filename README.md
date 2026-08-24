@@ -1,6 +1,6 @@
 # Tracker
 
-Android app (`org.paul.tracker`, minSdk 26) for manual health metrics, graphs, and WebDAV dump/restore.
+Android app (`org.bohme.tracker`, minSdk 26) for manual health metrics, graphs, and WebDAV dump/restore.
 
 There is no Gradle wrapper. Use the system Gradle and a local SDK:
 
