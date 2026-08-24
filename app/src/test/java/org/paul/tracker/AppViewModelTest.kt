@@ -5,8 +5,15 @@ import java.nio.file.Files
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.ArrayDeque
+import java.util.Locale
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +24,7 @@ import org.junit.Before
 import org.junit.Test
 import org.paul.tracker.data.BuiltInMetrics
 import org.paul.tracker.data.Clock
+import org.paul.tracker.data.JsonCodec
 import org.paul.tracker.data.LoadState
 import org.paul.tracker.data.MetricDef
 import org.paul.tracker.data.Sample
@@ -211,6 +219,150 @@ class AppViewModelTest {
     }
 
     @Test
+    fun `save new sample appears and resets form`() {
+        createVm()
+        io.runAll()
+        vm.openEntry("weight")
+        assertEquals(MetricsSub.Entry, vm.state.value.metricsSub)
+        assertEquals("weight", vm.state.value.entryMetricId)
+        assertNull(vm.state.value.entrySampleId)
+        assertEquals(t0, vm.state.value.entryRecordedAt)
+        vm.setEntryFieldText("lb", "180.5")
+        vm.saveSample()
+        io.runAll()
+        val saved = vm.state.value.snapshot.samples.single()
+        assertEquals("weight", saved.metricId)
+        assertEquals(180.5, saved.values.getValue("lb"), 0.0)
+        assertEquals(Sources.MANUAL, saved.source)
+        assertEquals(t0, saved.recordedAt)
+        assertTrue(saved.id.isNotBlank())
+        assertNull(vm.state.value.entrySampleId)
+        assertTrue(vm.state.value.entryFieldText.isEmpty())
+        assertEquals(t0, vm.state.value.entryRecordedAt)
+        assertNull(vm.state.value.entryError)
+        assertEquals(MetricsSub.Entry, vm.state.value.metricsSub)
+        val reloaded = Store(file, Clock { t0 })
+        assertEquals(LoadState.Ready, reloaded.load())
+        assertEquals(180.5, reloaded.samplesFor("weight").single().values.getValue("lb"), 0.0)
+    }
+
+    @Test
+    fun `save sample rejects empty and non-finite without persist`() {
+        createVm()
+        io.runAll()
+        vm.openEntry("weight")
+        vm.saveSample()
+        assertNotNull(vm.state.value.entryError)
+        assertTrue(vm.state.value.snapshot.samples.isEmpty())
+        vm.setEntryFieldText("lb", "NaN")
+        vm.saveSample()
+        assertNotNull(vm.state.value.entryError)
+        assertTrue(vm.state.value.snapshot.samples.isEmpty())
+        vm.setEntryFieldText("lb", "∞")
+        vm.saveSample()
+        assertNotNull(vm.state.value.entryError)
+        assertTrue(vm.state.value.snapshot.samples.isEmpty())
+        val reloaded = Store(file, Clock { t0 })
+        assertEquals(LoadState.Ready, reloaded.load())
+        assertTrue(reloaded.samplesFor("weight").isEmpty())
+    }
+
+    @Test
+    fun `BP save requires systolic diastolic and pulse`() {
+        createVm()
+        io.runAll()
+        vm.openEntry("blood_pressure")
+        vm.setEntryFieldText("systolic", "118")
+        vm.setEntryFieldText("diastolic", "76")
+        vm.saveSample()
+        assertNotNull(vm.state.value.entryError)
+        assertTrue(vm.state.value.snapshot.samples.isEmpty())
+        vm.setEntryFieldText("pulse", "72")
+        vm.saveSample()
+        io.runAll()
+        val saved = vm.state.value.snapshot.samples.single()
+        assertEquals(118.0, saved.values.getValue("systolic"), 0.0)
+        assertEquals(76.0, saved.values.getValue("diastolic"), 0.0)
+        assertEquals(72.0, saved.values.getValue("pulse"), 0.0)
+        assertEquals(3, saved.values.size)
+    }
+
+    @Test
+    fun `edit save preserves extras extra pulse and source`() {
+        createVm()
+        io.runAll()
+        store.upsert(
+            Sample(
+                id = "s1",
+                metricId = "weight",
+                recordedAt = t0,
+                modifiedAt = t0,
+                source = Sources.BLUETOOTH,
+                values = mapOf("lb" to 170.0, "pulse" to 72.0),
+                extras = mapOf("note" to JsonPrimitive("fasted")),
+            ),
+        )
+        createVm()
+        io.runAll()
+        vm.openEntry("weight")
+        vm.editSample("s1")
+        assertEquals("s1", vm.state.value.entrySampleId)
+        assertEquals("170", vm.state.value.entryFieldText["lb"])
+        assertFalse(vm.state.value.entryFieldText.containsKey("pulse"))
+        vm.setEntryFieldText("lb", "180")
+        vm.saveSample()
+        io.runAll()
+        val saved = vm.state.value.snapshot.samples.single { it.id == "s1" }
+        assertEquals(180.0, saved.values.getValue("lb"), 0.0)
+        assertEquals(72.0, saved.values.getValue("pulse"), 0.0)
+        assertEquals(JsonPrimitive("fasted"), saved.extras.getValue("note"))
+        assertEquals(Sources.BLUETOOTH, saved.source)
+        assertNull(vm.state.value.entrySampleId)
+        val encoded = JsonCodec.encode(store.dump())
+        val sampleObj = Json.parseToJsonElement(encoded).jsonObject.getValue("samples").jsonArray.single().jsonObject
+        assertEquals("fasted", sampleObj.getValue("note").jsonPrimitive.content)
+        assertEquals(72.0, sampleObj.getValue("values").jsonObject.getValue("pulse").jsonPrimitive.double, 0.0)
+        assertEquals(Sources.BLUETOOTH, sampleObj.getValue("source").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `deleteSample removes row and newSample clears form`() {
+        createVm()
+        io.runAll()
+        vm.openEntry("weight")
+        vm.setEntryFieldText("lb", "180")
+        val later = t0.plusSeconds(60)
+        vm.setEntryRecordedAt(later)
+        vm.saveSample()
+        io.runAll()
+        val saved = vm.state.value.snapshot.samples.single()
+        assertEquals(later, saved.recordedAt)
+        val id = saved.id
+        vm.editSample(id)
+        assertEquals(id, vm.state.value.entrySampleId)
+        vm.newSample()
+        assertNull(vm.state.value.entrySampleId)
+        assertTrue(vm.state.value.entryFieldText.isEmpty())
+        assertEquals(t0, vm.state.value.entryRecordedAt)
+        vm.deleteSample(id)
+        io.runAll()
+        assertTrue(vm.state.value.snapshot.samples.none { it.id == id })
+    }
+
+    @Test
+    fun `tab switch preserves entry form buffers`() {
+        createVm()
+        io.runAll()
+        vm.openEntry("weight")
+        vm.setEntryFieldText("lb", "180")
+        vm.selectTab(Tab.Graphs)
+        vm.selectTab(Tab.Metrics)
+        assertEquals(MetricsSub.Entry, vm.state.value.metricsSub)
+        assertEquals("180", vm.state.value.entryFieldText["lb"])
+        assertEquals("weight", vm.state.value.entryMetricId)
+    }
+
+    @Test
     fun `saveMetric rejects blank field label without persist`() {
         createVm()
         io.runAll()
@@ -227,7 +379,7 @@ class AppViewModelTest {
     private fun createVm() {
         val clock = Clock { t0 }
         store = Store(file, clock)
-        vm = AppViewModel(store, clock, ZoneOffset.UTC, io)
+        vm = AppViewModel(store, clock, ZoneOffset.UTC, io, Locale.US)
     }
 
     private class QueueDispatcher : CoroutineDispatcher() {

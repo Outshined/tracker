@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,10 @@ import org.paul.tracker.data.MetricDef
 import org.paul.tracker.data.Snapshot
 import org.paul.tracker.data.Store
 import org.paul.tracker.data.mergeEditedMetric
+import org.paul.tracker.data.mergeEditedSample
 import org.paul.tracker.stats.defaultSelectedMetricIds
+import org.paul.tracker.stats.formatLocaleNumber
+import org.paul.tracker.stats.parseRequiredFields
 import org.paul.tracker.stats.selectionAfterDelete
 
 enum class Tab { Metrics, Graphs, Settings }
@@ -42,6 +46,10 @@ data class AppUiState(
     val tab: Tab = Tab.Metrics,
     val metricsSub: MetricsSub = MetricsSub.List,
     val entryMetricId: String? = null,
+    val entrySampleId: String? = null,
+    val entryFieldText: Map<String, String> = emptyMap(),
+    val entryRecordedAt: Instant = Instant.EPOCH,
+    val entryError: String? = null,
     val addLabel: String = "",
     val addFields: List<FieldForm> = listOf(FieldForm()),
     val graphSelectedIds: Set<String> = emptySet(),
@@ -59,6 +67,7 @@ class AppViewModel(
     private val clock: Clock,
     val zone: ZoneId,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val locale: Locale = Locale.getDefault(),
 ) : ViewModel() {
     private val _state = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = _state.asStateFlow()
@@ -113,7 +122,115 @@ class AppViewModel(
     fun openEntry(id: String) {
         if (_state.value.snapshot.metrics.none { it.id == id }) return
         _state.update {
-            it.copy(metricsSub = MetricsSub.Entry, entryMetricId = id)
+            it.copy(
+                metricsSub = MetricsSub.Entry,
+                entryMetricId = id,
+                entrySampleId = null,
+                entryFieldText = emptyMap(),
+                entryRecordedAt = clock.now(),
+                entryError = null,
+            )
+        }
+    }
+
+    fun setEntryFieldText(fieldId: String, value: String) {
+        _state.update {
+            it.copy(
+                entryFieldText = it.entryFieldText + (fieldId to value),
+                entryError = null,
+            )
+        }
+    }
+
+    fun setEntryRecordedAt(value: Instant) {
+        _state.update { it.copy(entryRecordedAt = value) }
+    }
+
+    fun editSample(id: String) {
+        val current = _state.value
+        val metricId = current.entryMetricId ?: return
+        val sample = current.snapshot.samples.find { it.id == id } ?: return
+        if (sample.metricId != metricId) return
+        val metric = current.snapshot.metrics.find { it.id == metricId } ?: return
+        _state.update {
+            it.copy(
+                entrySampleId = sample.id,
+                entryRecordedAt = sample.recordedAt,
+                entryFieldText = metric.fields.associate { field ->
+                    field.id to (sample.values[field.id]?.let { v -> formatLocaleNumber(v, locale) } ?: "")
+                },
+                entryError = null,
+            )
+        }
+    }
+
+    fun newSample() {
+        _state.update {
+            it.copy(
+                entrySampleId = null,
+                entryFieldText = emptyMap(),
+                entryRecordedAt = clock.now(),
+                entryError = null,
+            )
+        }
+    }
+
+    fun saveSample() {
+        val current = _state.value
+        val metricId = current.entryMetricId ?: return
+        val metric = current.snapshot.metrics.find { it.id == metricId } ?: return
+        val parsed = parseRequiredFields(metric.fields, current.entryFieldText, locale)
+        if (parsed == null) {
+            _state.update { it.copy(entryError = "Every field is required.") }
+            return
+        }
+        val existing = current.entrySampleId?.let { id -> current.snapshot.samples.find { it.id == id } }
+        val sample = mergeEditedSample(
+            existing = existing,
+            metric = metric,
+            parsedValues = parsed,
+            recordedAt = current.entryRecordedAt,
+            idForNew = UUID.randomUUID().toString(),
+        )
+        viewModelScope.launch(io) {
+            try {
+                store.upsert(sample)
+                val snap = store.snapshot()
+                _state.update {
+                    it.copy(
+                        snapshot = snap,
+                        storeError = null,
+                        entryError = null,
+                        entrySampleId = null,
+                        entryFieldText = emptyMap(),
+                        entryRecordedAt = clock.now(),
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(storeError = e.message ?: e.javaClass.simpleName) }
+            }
+        }
+    }
+
+    fun deleteSample(id: String) {
+        viewModelScope.launch(io) {
+            try {
+                store.deleteSample(id)
+                val snap = store.snapshot()
+                _state.update { prev ->
+                    val editingDeleted = prev.entrySampleId == id
+                    prev.copy(
+                        snapshot = snap,
+                        storeError = null,
+                        entrySampleId = if (editingDeleted) null else prev.entrySampleId,
+                        entryFieldText = if (editingDeleted) emptyMap() else prev.entryFieldText,
+                        entryRecordedAt = if (editingDeleted) clock.now() else prev.entryRecordedAt,
+                        entryError = if (editingDeleted) null else prev.entryError,
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(storeError = e.message ?: e.javaClass.simpleName) }
+            }
         }
     }
 
@@ -239,6 +356,10 @@ class AppViewModel(
                         ),
                         metricsSub = if (editingGone) MetricsSub.List else prev.metricsSub,
                         entryMetricId = if (editingGone) null else prev.entryMetricId,
+                        entrySampleId = if (editingGone) null else prev.entrySampleId,
+                        entryFieldText = if (editingGone) emptyMap() else prev.entryFieldText,
+                        entryRecordedAt = if (editingGone) clock.now() else prev.entryRecordedAt,
+                        entryError = if (editingGone) null else prev.entryError,
                         addLabel = if (editingGone) "" else prev.addLabel,
                         addFields = if (editingGone) listOf(FieldForm()) else prev.addFields,
                         formError = if (editingGone) null else prev.formError,
@@ -270,6 +391,10 @@ class AppViewModel(
                 formError = null,
                 metricsSub = MetricsSub.List,
                 entryMetricId = null,
+                entrySampleId = null,
+                entryFieldText = emptyMap(),
+                entryRecordedAt = clock.now(),
+                entryError = null,
                 addLabel = "",
                 addFields = listOf(FieldForm()),
                 graphSelectedIds = defaultSelectedMetricIds(snap.metrics, snap.samples).toSet(),

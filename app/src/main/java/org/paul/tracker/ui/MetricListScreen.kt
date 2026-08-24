@@ -75,14 +75,6 @@ fun MetricListScreen(
 }
 
 @Composable
-fun EntryStubScreen(
-    label: String,
-    modifier: Modifier = Modifier,
-) {
-    Text(text = label, modifier = modifier.padding(16.dp))
-}
-
-@Composable
 private fun MetricRow(
     metric: MetricDef,
     last: Sample?,

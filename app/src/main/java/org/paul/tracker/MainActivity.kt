@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import org.paul.tracker.data.LoadState
 import org.paul.tracker.ui.AddMetricScreen
-import org.paul.tracker.ui.EntryStubScreen
+import org.paul.tracker.ui.EntryScreen
 import org.paul.tracker.ui.MetricListScreen
 import org.paul.tracker.ui.TrackerTheme
 
@@ -167,8 +167,23 @@ private fun MetricsTab(vm: AppViewModel, state: AppUiState) {
             onSave = { vm.saveMetric() },
         )
         MetricsSub.Entry -> {
-            val label = state.snapshot.metrics.find { it.id == state.entryMetricId }?.label ?: ""
-            EntryStubScreen(label = label)
+            val metric = state.snapshot.metrics.find { it.id == state.entryMetricId }
+            if (metric != null) {
+                EntryScreen(
+                    metric = metric,
+                    samples = state.snapshot.samples,
+                    fieldText = state.entryFieldText,
+                    recordedAt = state.entryRecordedAt,
+                    zone = vm.zone,
+                    error = state.entryError,
+                    onFieldChange = { fieldId, value -> vm.setEntryFieldText(fieldId, value) },
+                    onRecordedAtChange = { vm.setEntryRecordedAt(it) },
+                    onSave = { vm.saveSample() },
+                    onNewSample = { vm.newSample() },
+                    onEdit = { vm.editSample(it) },
+                    onDelete = { vm.deleteSample(it) },
+                )
+            }
         }
     }
 }
