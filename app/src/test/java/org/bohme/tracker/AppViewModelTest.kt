@@ -1038,6 +1038,197 @@ class AppViewModelTest {
         assertEquals(AverageMode.Weekly, vm.state.value.averageMode)
     }
 
+    @Test
+    fun `openToday prefills today's sample and ignores yesterday`() {
+        createVm()
+        io.runAll()
+        store.upsert(
+            Sample(
+                id = "yest",
+                metricId = "weight",
+                recordedAt = Instant.parse("2026-08-23T20:00:00Z"),
+                modifiedAt = Instant.parse("2026-08-23T20:00:00Z"),
+                source = Sources.MANUAL,
+                values = mapOf("lb" to 170.0),
+            ),
+        )
+        store.upsert(
+            Sample(
+                id = "today-w",
+                metricId = "weight",
+                recordedAt = t0,
+                modifiedAt = t0,
+                source = Sources.MANUAL,
+                values = mapOf("lb" to 180.0),
+            ),
+        )
+        createVm()
+        io.runAll()
+        vm.openToday()
+        assertEquals(MetricsSub.Today, vm.state.value.metricsSub)
+        assertEquals("180", vm.state.value.todayFieldText["weight/lb"])
+        assertEquals("today-w", vm.state.value.todayExistingIds["weight"])
+        assertNull(vm.state.value.todayExistingIds["glucose"])
+        assertTrue(vm.state.value.todayFieldText["glucose/mg_dl"].isNullOrEmpty())
+        assertNull(vm.state.value.todayError)
+    }
+
+    @Test
+    fun `saveToday skips empty metrics`() {
+        createVm()
+        io.runAll()
+        vm.openToday()
+        vm.setTodayField("weight", "lb", "180")
+        vm.saveToday()
+        io.runAll()
+        val saved = vm.state.value.snapshot.samples
+        assertEquals(1, saved.size)
+        assertEquals("weight", saved.single().metricId)
+        assertEquals(180.0, saved.single().values.getValue("lb"), 0.0)
+        assertEquals(t0, saved.single().recordedAt)
+        assertEquals(Sources.MANUAL, saved.single().source)
+        assertEquals(MetricsSub.Today, vm.state.value.metricsSub)
+        assertNull(vm.state.value.todayError)
+        assertEquals(saved.single().id, vm.state.value.todayExistingIds["weight"])
+        assertEquals("180", vm.state.value.todayFieldText["weight/lb"])
+    }
+
+    @Test
+    fun `saveToday all-or-nothing if BP missing pulse`() {
+        createVm()
+        io.runAll()
+        vm.openToday()
+        vm.setTodayField("weight", "lb", "180")
+        vm.setTodayField("blood_pressure", "systolic", "118")
+        vm.setTodayField("blood_pressure", "diastolic", "76")
+        vm.saveToday()
+        assertEquals("Every field is required for Blood pressure.", vm.state.value.todayError)
+        assertTrue(vm.state.value.snapshot.samples.isEmpty())
+        assertEquals(MetricsSub.Today, vm.state.value.metricsSub)
+        assertEquals("180", vm.state.value.todayFieldText["weight/lb"])
+        val reloaded = Store(file, Clock { t0 })
+        assertEquals(LoadState.Ready, reloaded.load())
+        assertTrue(reloaded.snapshot().samples.isEmpty())
+    }
+
+    @Test
+    fun `saveToday rejects non-finite without upserts`() {
+        createVm()
+        io.runAll()
+        vm.openToday()
+        vm.setTodayField("weight", "lb", "NaN")
+        vm.saveToday()
+        assertEquals("Every field is required for Weight.", vm.state.value.todayError)
+        assertTrue(vm.state.value.snapshot.samples.isEmpty())
+    }
+
+    @Test
+    fun `saveToday creates weight and glucose`() {
+        createVm()
+        io.runAll()
+        vm.openToday()
+        vm.setTodayField("weight", "lb", "180")
+        vm.setTodayField("glucose", "mg_dl", "95")
+        vm.saveToday()
+        io.runAll()
+        val byMetric = vm.state.value.snapshot.samples.associateBy { it.metricId }
+        assertEquals(setOf("weight", "glucose"), byMetric.keys)
+        assertEquals(180.0, byMetric.getValue("weight").values.getValue("lb"), 0.0)
+        assertEquals(95.0, byMetric.getValue("glucose").values.getValue("mg_dl"), 0.0)
+        assertEquals(t0, byMetric.getValue("weight").recordedAt)
+        assertEquals(t0, byMetric.getValue("glucose").recordedAt)
+        assertEquals(byMetric.getValue("weight").id, vm.state.value.todayExistingIds["weight"])
+        assertEquals(byMetric.getValue("glucose").id, vm.state.value.todayExistingIds["glucose"])
+    }
+
+    @Test
+    fun `saveToday second save same day updates same sample id`() {
+        createVm()
+        io.runAll()
+        store.upsert(
+            Sample(
+                id = "s1",
+                metricId = "weight",
+                recordedAt = t0,
+                modifiedAt = t0,
+                source = Sources.BLUETOOTH,
+                values = mapOf("lb" to 170.0, "pulse" to 72.0),
+                extras = mapOf("note" to JsonPrimitive("fasted")),
+            ),
+        )
+        createVm()
+        io.runAll()
+        vm.openToday()
+        assertEquals("s1", vm.state.value.todayExistingIds["weight"])
+        vm.setTodayField("weight", "lb", "185")
+        clock.now = t1
+        vm.saveToday()
+        io.runAll()
+        val saved = vm.state.value.snapshot.samples.single { it.metricId == "weight" }
+        assertEquals("s1", saved.id)
+        assertEquals(185.0, saved.values.getValue("lb"), 0.0)
+        assertEquals(72.0, saved.values.getValue("pulse"), 0.0)
+        assertEquals(JsonPrimitive("fasted"), saved.extras.getValue("note"))
+        assertEquals(Sources.BLUETOOTH, saved.source)
+        assertEquals(t0, saved.recordedAt)
+        assertEquals(t1, saved.modifiedAt)
+        assertEquals("s1", vm.state.value.todayExistingIds["weight"])
+        vm.setTodayField("weight", "lb", "190")
+        clock.now = t2
+        vm.saveToday()
+        io.runAll()
+        val again = vm.state.value.snapshot.samples.single { it.metricId == "weight" }
+        assertEquals("s1", again.id)
+        assertEquals(190.0, again.values.getValue("lb"), 0.0)
+        assertEquals(t0, again.recordedAt)
+        assertEquals(t2, again.modifiedAt)
+    }
+
+    @Test
+    fun `resetLocalData clears Today buffers and returns to List`() {
+        createVm()
+        io.runAll()
+        vm.openToday()
+        vm.setTodayField("weight", "lb", "180")
+        vm.setTodayField("blood_pressure", "systolic", "118")
+        assertEquals(MetricsSub.Today, vm.state.value.metricsSub)
+        vm.resetLocalData()
+        io.runAll()
+        assertEquals(MetricsSub.List, vm.state.value.metricsSub)
+        assertTrue(vm.state.value.todayFieldText.isEmpty())
+        assertTrue(vm.state.value.todayExistingIds.isEmpty())
+        assertNull(vm.state.value.todayError)
+        assertTrue(vm.state.value.snapshot.samples.isEmpty())
+    }
+
+    @Test
+    fun `tab switch preserves Today buffers`() {
+        createVm()
+        io.runAll()
+        vm.openToday()
+        vm.setTodayField("weight", "lb", "180")
+        vm.selectTab(Tab.Graphs)
+        vm.selectTab(Tab.Metrics)
+        assertEquals(MetricsSub.Today, vm.state.value.metricsSub)
+        assertEquals("180", vm.state.value.todayFieldText["weight/lb"])
+    }
+
+    @Test
+    fun `restore applyCatalogReset clears Today buffers`() {
+        createVm()
+        io.runAll()
+        vm.openToday()
+        vm.setTodayField("weight", "lb", "180")
+        configureDav()
+        fakeDav.getResult = remoteDump()
+        vm.restore()
+        io.runAll()
+        assertEquals(MetricsSub.List, vm.state.value.metricsSub)
+        assertTrue(vm.state.value.todayFieldText.isEmpty())
+        assertTrue(vm.state.value.todayExistingIds.isEmpty())
+        assertNull(vm.state.value.todayError)
+    }
+
     private fun createVm(storeOverride: Store? = null, configOverride: ConfigStore? = null) {
         store = storeOverride ?: Store(file, clock)
         config = configOverride ?: ConfigStore(File(dir, "webdav.json"))

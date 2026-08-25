@@ -24,6 +24,7 @@ import org.bohme.tracker.data.FieldDef
 import org.bohme.tracker.data.JsonCodec
 import org.bohme.tracker.data.LoadState
 import org.bohme.tracker.data.MetricDef
+import org.bohme.tracker.data.Sample
 import org.bohme.tracker.data.Snapshot
 import org.bohme.tracker.data.Store
 import org.bohme.tracker.data.mergeEditedMetric
@@ -32,13 +33,16 @@ import org.bohme.tracker.stats.AverageMode
 import org.bohme.tracker.stats.RangePreset
 import org.bohme.tracker.stats.defaultSelectedMetricIds
 import org.bohme.tracker.stats.formatLocaleNumber
+import org.bohme.tracker.stats.localDateOf
 import org.bohme.tracker.stats.parseRequiredFields
+import org.bohme.tracker.stats.sampleOnLocalDate
 import org.bohme.tracker.stats.selectionAfterDelete
+import org.bohme.tracker.stats.todayFieldKey
 import org.bohme.tracker.webdav.WebDavClient
 
 enum class Tab { Metrics, Graphs, Settings }
 
-enum class MetricsSub { List, Add, Edit, Entry }
+enum class MetricsSub { List, Add, Edit, Entry, Today }
 
 data class FieldForm(
     val id: String = "",
@@ -58,6 +62,9 @@ data class AppUiState(
     val entryFieldText: Map<String, String> = emptyMap(),
     val entryRecordedAt: Instant = Instant.EPOCH,
     val entryError: String? = null,
+    val todayFieldText: Map<String, String> = emptyMap(),
+    val todayExistingIds: Map<String, String> = emptyMap(),
+    val todayError: String? = null,
     val addLabel: String = "",
     val addFields: List<FieldForm> = listOf(FieldForm()),
     val graphSelectedIds: Set<String> = emptySet(),
@@ -211,6 +218,75 @@ class AppViewModel(
                 entryRecordedAt = clock.now(),
                 entryError = null,
             )
+        }
+    }
+
+    fun openToday() {
+        val (texts, ids) = todayBuffers(_state.value.snapshot)
+        _state.update {
+            it.copy(
+                metricsSub = MetricsSub.Today,
+                todayFieldText = texts,
+                todayExistingIds = ids,
+                todayError = null,
+            )
+        }
+    }
+
+    fun setTodayField(metricId: String, fieldId: String, value: String) {
+        _state.update {
+            it.copy(
+                todayFieldText = it.todayFieldText + (todayFieldKey(metricId, fieldId) to value),
+                todayError = null,
+            )
+        }
+    }
+
+    fun saveToday() {
+        val current = _state.value
+        val prepared = mutableListOf<Sample>()
+        for (metric in current.snapshot.metrics) {
+            val texts = metric.fields.associate { field ->
+                field.id to current.todayFieldText[todayFieldKey(metric.id, field.id)].orEmpty()
+            }
+            if (texts.values.all { it.trim().isEmpty() }) continue
+            val parsed = parseRequiredFields(metric.fields, texts, locale)
+            if (parsed == null) {
+                _state.update {
+                    it.copy(todayError = "Every field is required for ${metric.label}.")
+                }
+                return
+            }
+            val existing = current.todayExistingIds[metric.id]?.let { id ->
+                current.snapshot.samples.find { it.id == id }
+            }
+            prepared += mergeEditedSample(
+                existing = existing,
+                metric = metric,
+                parsedValues = parsed,
+                recordedAt = existing?.recordedAt ?: clock.now(),
+                idForNew = UUID.randomUUID().toString(),
+            )
+        }
+        viewModelScope.launch(io) {
+            try {
+                for (sample in prepared) {
+                    store.upsert(sample)
+                }
+                val snap = store.snapshot()
+                val (texts, ids) = todayBuffers(snap)
+                _state.update {
+                    it.copy(
+                        snapshot = snap,
+                        storeError = null,
+                        todayError = null,
+                        todayFieldText = texts,
+                        todayExistingIds = ids,
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(storeError = e.message ?: e.javaClass.simpleName) }
+            }
         }
     }
 
@@ -658,6 +734,22 @@ class AppViewModel(
         _state.update { it.withCatalogReset(snap) }
     }
 
+    private fun todayBuffers(snap: Snapshot): Pair<Map<String, String>, Map<String, String>> {
+        val date = localDateOf(clock.now(), zone)
+        val texts = linkedMapOf<String, String>()
+        val ids = linkedMapOf<String, String>()
+        for (metric in snap.metrics) {
+            val sample = sampleOnLocalDate(snap.samples, metric.id, date, zone) ?: continue
+            ids[metric.id] = sample.id
+            for (field in metric.fields) {
+                val raw = sample.values[field.id]
+                texts[todayFieldKey(metric.id, field.id)] =
+                    if (raw != null) formatLocaleNumber(raw, locale) else ""
+            }
+        }
+        return texts to ids
+    }
+
     private fun AppUiState.withCatalogReset(snap: Snapshot): AppUiState = copy(
         load = LoadState.Ready,
         snapshot = snap,
@@ -669,6 +761,9 @@ class AppViewModel(
         entryFieldText = emptyMap(),
         entryRecordedAt = clock.now(),
         entryError = null,
+        todayFieldText = emptyMap(),
+        todayExistingIds = emptyMap(),
+        todayError = null,
         addLabel = "",
         addFields = listOf(FieldForm()),
         graphSelectedIds = defaultSelectedMetricIds(snap.metrics, snap.samples).toSet(),

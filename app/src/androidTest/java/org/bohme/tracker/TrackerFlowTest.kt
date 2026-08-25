@@ -30,6 +30,33 @@ class TrackerFlowTest {
     val rules: TestRule = RuleChain.outerRule(ClearAppFilesRule()).around(composeRule)
 
     @Test
+    fun todayButtonVisibleOnListOpensToday() {
+        awaitReady()
+        composeRule.onNodeWithTag("btn-today").assertIsDisplayed()
+        composeRule.onNodeWithTag("btn-add-metric").assertIsDisplayed()
+        composeRule.onNodeWithTag("btn-today").performClick()
+        waitForTag("today-field-weight-lb")
+        composeRule.onNodeWithTag("today-field-weight-lb").assertIsDisplayed()
+        composeRule.onNodeWithTag("btn-save-today").assertIsDisplayed()
+        composeRule.onNodeWithTag("today-field-blood_pressure-systolic").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("today-field-blood_pressure-diastolic").assertIsDisplayed()
+        composeRule.onNodeWithTag("today-field-blood_pressure-pulse").assertIsDisplayed()
+    }
+
+    @Test
+    fun todayFillWeightSaveBackShowsOnList() {
+        awaitReady()
+        composeRule.onNodeWithTag("btn-today").performClick()
+        waitForTag("today-field-weight-lb")
+        composeRule.onNodeWithTag("today-field-weight-lb").performTextInput("180")
+        composeRule.onNodeWithTag("btn-save-today").performScrollTo().performClick()
+        composeRule.onNodeWithTag("btn-back").performClick()
+        waitForTag("metric-row-weight")
+        waitForText("180 lb")
+        composeRule.onNodeWithText("180 lb").assertIsDisplayed()
+    }
+
+    @Test
     fun firstLaunchShowsFourBuiltIns() {
         awaitReady()
         composeRule.onNodeWithText("Weight").assertIsDisplayed()

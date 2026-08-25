@@ -35,6 +35,7 @@ import org.bohme.tracker.ui.EntryScreen
 import org.bohme.tracker.ui.GraphScreen
 import org.bohme.tracker.ui.MetricListScreen
 import org.bohme.tracker.ui.SettingsScreen
+import org.bohme.tracker.ui.TodayScreen
 import org.bohme.tracker.ui.TrackerTheme
 
 class MainActivity : ComponentActivity() {
@@ -74,6 +75,10 @@ private fun TrackerScaffold(vm: AppViewModel) {
                         state.metricsSub == MetricsSub.List &&
                         state.load is LoadState.Ready
                     ) {
+                        TextButton(
+                            onClick = { vm.openToday() },
+                            modifier = Modifier.testTag("btn-today"),
+                        ) { Text("Today") }
                         TextButton(
                             onClick = { vm.openAddMetric() },
                             modifier = Modifier.testTag("btn-add-metric"),
@@ -210,6 +215,13 @@ private fun MetricsTab(vm: AppViewModel, state: AppUiState) {
                 )
             }
         }
+        MetricsSub.Today -> TodayScreen(
+            metrics = state.snapshot.metrics,
+            fieldText = state.todayFieldText,
+            error = state.todayError,
+            onFieldChange = { metricId, fieldId, value -> vm.setTodayField(metricId, fieldId, value) },
+            onSave = { vm.saveToday() },
+        )
     }
 }
 
