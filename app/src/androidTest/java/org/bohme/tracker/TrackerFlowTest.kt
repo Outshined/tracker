@@ -325,10 +325,10 @@ class TrackerCorruptFlowTest {
         ).assertIsDisplayed()
         composeRule.onAllNodesWithText("Reset local data").onLast().performClick()
         composeRule.onNodeWithText("Reset").performClick()
+        composeRule.onNodeWithTag("tab-Metrics").performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {
             composeRule.onAllNodesWithText("Weight").fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNodeWithTag("tab-Metrics").performClick()
         composeRule.onNodeWithText("Weight").assertIsDisplayed()
         composeRule.onNodeWithText("BHB").assertIsDisplayed()
     }

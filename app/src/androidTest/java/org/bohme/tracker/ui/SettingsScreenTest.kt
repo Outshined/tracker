@@ -140,18 +140,16 @@ class SettingsScreenTest {
 
     @Test
     fun resetVisibleOnlyWhenShowResetConfirmAndCancel() {
-        composeRule.setContent {
-            TrackerTheme {
-                defaultSettings(showReset = false)
-            }
-        }
-        composeRule.onAllNodesWithText("Reset local data").assertCountEquals(0)
+        var showReset by mutableStateOf(false)
         var resets = 0
         composeRule.setContent {
             TrackerTheme {
-                defaultSettings(showReset = true, onReset = { resets++ })
+                defaultSettings(showReset = showReset, onReset = { resets++ })
             }
         }
+        composeRule.onAllNodesWithText("Reset local data").assertCountEquals(0)
+        showReset = true
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("Reset local data").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Reset local data").performClick()
         composeRule.onNodeWithText(
