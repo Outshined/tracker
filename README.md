@@ -2,27 +2,55 @@
 
 Android app (`org.bohme.tracker`, minSdk 26) for manual health metrics, graphs, and WebDAV dump/restore.
 
-There is no Gradle wrapper. Use the system Gradle and a local SDK:
+## Install on a phone
+
+The installable file is the **debug APK** (sideload; debug-signed):
+
+`app/build/outputs/apk/debug/app-debug.apk`
+
+Copy that file to the phone (USB, Drive, `adb push`) or install over USB:
 
 ```
-export JAVA_HOME=/usr/lib/jvm/java-26-openjdk
-export ANDROID_HOME=/home/paul/android
-echo "sdk.dir=$ANDROID_HOME" > local.properties
-/usr/bin/gradle :app:assembleDebug :app:test :webdav:test
+adb devices
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+On the phone: enable **Developer options** → **USB debugging**. First sideload may need **Install unknown apps** for the app you use to open the APK.
+
+## Build
+
+Needs a JDK 17+ (`JAVA_HOME`) and an Android SDK. From the repo root:
+
+```
+export JAVA_HOME=/usr/lib/jvm/java-26-openjdk   # or another JDK 17+
+export ANDROID_HOME=/home/paul/android          # SDK root with platform-tools
+echo "sdk.dir=$ANDROID_HOME" > local.properties # gitignored; once per clone
+
+./gradlew :app:assembleDebug
+```
+
+Do **not** use Arch's `/usr/bin/gradle` (it is missing `gradle-public-api-legacy`). `./gradlew` uses Gradle **9.7.0**. If the environment has `GRADLE_HOME=/usr/share/java/gradle`, the wrapper unsets it.
+
+APK after a successful build:
+
+`app/build/outputs/apk/debug/app-debug.apk`
 
 ## Tests
 
-JVM unit tests are `:app:test` and `:webdav:test` (no device, no live WebDAV).
-
-Instrumented Compose smoke tests need a device or emulator:
+JVM unit tests (no device, no live WebDAV):
 
 ```
-/usr/bin/gradle :app:assembleDebugAndroidTest
-/usr/bin/gradle :app:connectedDebugAndroidTest
+./gradlew :app:testDebugUnitTest :webdav:test
 ```
 
-`assembleDebugAndroidTest` compiles the androidTest APK. `connectedDebugAndroidTest` runs it; it fails if no device is attached.
+Instrumented Compose tests need a device or emulator:
+
+```
+./gradlew :app:assembleDebugAndroidTest
+./gradlew :app:connectedDebugAndroidTest
+```
+
+`connectedDebugAndroidTest` fails if no device is attached.
 
 ## WebDAV
 
