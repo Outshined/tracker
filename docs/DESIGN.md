@@ -75,7 +75,7 @@ Pain if we overbuild: Room, use-cases, Navigation, and a chart SDK would dwarf t
 
 ### Non-goals (v1)
 
-- Bluetooth, BLE, USB, Health Connect, Google Fit, Apple Health.
+- Bluetooth, BLE, USB, Health Connect, Google Fit, Apple Health. Parked plan: [`docs/BLUETOOTH.md`](BLUETOOTH.md). Do not start until basic UI is done.
 - Background or automatic WebDAV sync, WorkManager periodic backup.
 - Two-device merge, sample-level etags, conflict UI, “Restore and merge”.
 - Accounts, OAuth, Nextcloud login flow beyond URL + Basic.
@@ -242,7 +242,7 @@ flowchart LR
   Store --> File[store.json]
 ```
 
-A future Bluetooth module constructs a `Sample` (`id` = caller-chosen, `metricId` = mapped metric, `recordedAt` = device timestamp if present else `clock.now()`, `source = "bluetooth"`, `values` = named fields, optional extras e.g. device name) and calls `upsert`. It never opens `store.json`. Device discovery, GATT, and metric-mapping UI are out of scope.
+A future Bluetooth module constructs a `Sample` (`id` = caller-chosen, `metricId` = mapped metric, `recordedAt` = device timestamp if present else `clock.now()`, `source = "bluetooth"`, `values` = named fields, optional extras e.g. device name) and calls `upsert`. It never opens `store.json`. Device discovery, GATT, and metric-mapping UI are out of scope. Parked implementation contract: [`docs/BLUETOOTH.md`](BLUETOOTH.md) (Omron Platinum first, `DeviceAdapter` seam). Do not start those PRs until basic UI is done.
 
 Reserved `source` strings: `manual`, `bluetooth`. Unknown source strings are stored and round-tripped. **v1 UI shows `source` on a sample row if and only if it is not `manual`.** It does not filter by source.
 

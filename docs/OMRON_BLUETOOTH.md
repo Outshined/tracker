@@ -1,3 +1,5 @@
+> Superseded by [`docs/BLUETOOTH.md`](BLUETOOTH.md) (Bluetooth ingest design, Omron Platinum first). Keep this file only as historical notes.
+
 # Omron Bluetooth — plan and test approach
 
 This is a plan, not an implementation. Tracker v1 ingest is already `SampleWriter.upsert(Sample)` with `source = "bluetooth"` and caller-supplied ids. Omron work should write that path only.
