@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -78,21 +79,22 @@ private fun TodayFieldRow(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         fields.forEach { field ->
-            OutlinedTextField(
-                value = fieldText[todayFieldKey(metricId, field.id)].orEmpty(),
-                onValueChange = { onFieldChange(metricId, field.id, it) },
-                label = { Text(field.label) },
-                suffix = if (field.unit.isEmpty()) {
-                    null
-                } else {
-                    { Text(field.unit) }
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier
-                    .width(fieldWidth)
-                    .testTag("today-field-$metricId-${field.id}"),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = fieldText[todayFieldKey(metricId, field.id)].orEmpty(),
+                    onValueChange = { onFieldChange(metricId, field.id, it) },
+                    label = null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier
+                        .width(fieldWidth)
+                        .testTag("today-field-$metricId-${field.id}"),
+                )
+                if (field.unit.isNotEmpty()) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(field.unit, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }

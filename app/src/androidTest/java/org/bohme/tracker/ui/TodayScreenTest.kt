@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -14,6 +15,7 @@ import org.bohme.tracker.data.BuiltInMetrics
 import org.bohme.tracker.data.FieldDef
 import org.bohme.tracker.data.MetricDef
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -125,5 +127,58 @@ class TodayScreenTest {
             }
         }
         composeRule.onNodeWithText("Every field is required for Blood pressure.").assertIsDisplayed()
+    }
+
+    @Test
+    fun fieldTextBoxesStartEmptyAndAcceptInput() {
+        var fieldText by mutableStateOf(mapOf<String, String>())
+        composeRule.setContent {
+            TrackerTheme {
+                TodayScreen(
+                    metrics = listOf(weight, bp),
+                    fieldText = fieldText,
+                    error = null,
+                    onFieldChange = { metricId, fieldId, value ->
+                        fieldText = fieldText + ("$metricId/$fieldId" to value)
+                    },
+                    onSave = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("today-field-weight-lb").performTextInput("180")
+        composeRule.onNodeWithTag("today-field-blood_pressure-systolic").performTextInput("118")
+        composeRule.onNodeWithTag("today-field-blood_pressure-diastolic").performTextInput("76")
+        composeRule.onNodeWithTag("today-field-blood_pressure-pulse").performTextInput("72")
+        assertEquals("180", fieldText["weight/lb"])
+        assertEquals("118", fieldText["blood_pressure/systolic"])
+        assertEquals("76", fieldText["blood_pressure/diastolic"])
+        assertEquals("72", fieldText["blood_pressure/pulse"])
+    }
+
+    @Test
+    fun noLabelTextInsideTextField() {
+        composeRule.setContent {
+            TrackerTheme {
+                TodayScreen(
+                    metrics = listOf(weight, bp),
+                    fieldText = emptyMap(),
+                    error = null,
+                    onFieldChange = { _, _, _ -> },
+                    onSave = {},
+                )
+            }
+        }
+        val lbTag = "today-field-weight-lb"
+        val lbNode = composeRule.onNodeWithTag(lbTag).fetchSemanticsNode()
+        val lbBounds = lbNode.boundsInRoot
+
+        for (nodeInteraction in composeRule.onAllNodesWithText("Weight").fetchSemanticsNodes()) {
+            val nodeBounds = nodeInteraction.boundsInRoot
+            assertFalse(
+                "Weight text should not be inside the lb field box",
+                nodeBounds.left >= lbBounds.left && nodeBounds.right <= lbBounds.right &&
+                    nodeBounds.top >= lbBounds.top && nodeBounds.bottom <= lbBounds.bottom,
+            )
+        }
     }
 }
