@@ -64,12 +64,6 @@
 #
 ##############################################################################
 
-# Arch Linux's gradle package exports GRADLE_HOME=/usr/share/java/gradle.
-# That directory is not an official distribution and breaks this wrapper.
-if [ "${GRADLE_HOME-}" = "/usr/share/java/gradle" ]; then
-    unset GRADLE_HOME
-fi
-
 # Attempt to set APP_HOME
 
 # Resolve links: $0 may be a link

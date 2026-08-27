@@ -40,7 +40,7 @@ Local truth is an atomic JSON file in app-private storage. WebDAV is backup and 
 | KD-12 | **Averages = arithmetic mean of in-range points, local-TZ calendar buckets** (day / ISO week / calendar month). Pipeline: filter `[start,end)` → `bucketMeans` (clamp each mean `t = max(bucketOrigin, start)`) → downsample → `project`. Partial buckets = visible points only. Empty buckets omitted. | “Weekly, monthly, and similar.” A Wednesday 7d window’s ISO-week origin is Monday; clamping keeps overlay `t` inside the project domain. |
 | KD-13 | **No DI framework.** `TrackerApp` exposes `filesDir` + a process `Clock` only. `AppViewModel.Factory` constructs `Store`, `ConfigStore`, `WebDavClient` and **`load()`s on `Dispatchers.IO`**. Never `runBlocking` / never `Store` on the main thread. | Hilt is ceremony. `Application.onCreate` must not parse 10 MB JSON. |
 | KD-14 | **Credentials live in `filesDir/webdav.json`, never in the health dump.** `android:allowBackup="false"` plus `data_extraction_rules.xml` / `fullBackupContent` excluding all files. | WebDAV is the only off-device copy. |
-| KD-15 | **Samples: add / edit / delete. Metrics: create; edit `label`/`unit` strings only; delete cascades samples (confirm names the count).** Field ids and field count/order are immutable after create. | A unit typo must not require deleting the series. Changing field identity would orphan `values` keys. |
+| KD-15 | **Samples: add / edit / delete. Metrics: create; edit `label`/`unit` strings, per-field **color**, and graph min/max; delete cascades samples (confirm names the count).** Field ids and field count/order are immutable after create. | A unit typo must not require deleting the series. Changing field identity would orphan `values` keys. Graph axis is per metric (KD-20), not per field. Color is per field (each plotted series). |
 | KD-16 | **HTTP Basic, HTTPS preferred, optional “Allow insecure TLS” default off.** No OAuth. User-installed CAs are **not** trusted (API 24+ default network security); the insecure toggle is the only self-signed path. Username containing `:` is rejected. | Nextcloud/NAS is Basic. Trusting user CAs would be a second TLS policy; we do not add it. |
 | KD-17 | **Navigation: 3-tab root held on `AppViewModel` (`Tab` + `MetricsSub`).** Switching tabs **preserves** Metrics sub-screen and form buffers. No `NavHost`. | Standard bottom-bar behavior without a navigation library. |
 | KD-18 | **Seed built-ins iff `store.json` and `store.json.bak` are both absent.** An existing file, including `{}` / `"metrics": []`, is truth and is **not** re-seeded. Unreadable files are Corrupt (no seed, no persist, Backup disabled) until Reset or Restore. | Seed-on-empty-catalog would resurrect built-ins after the user deleted them, and would PUT an empty catalog over a good remote dump. |
@@ -270,8 +270,8 @@ Switching `Tab` does **not** reset `MetricsSub`, `entryMetricId`, or form buffer
 
 - **Metrics / List:** catalog in array order. Row: label; `formatSampleValues(metric, lastSample)` or “No samples”; last `recordedAt` local. Tap → Entry. App bar: “Add metric”. Long-press / overflow per row: Edit metric, Delete metric.
 - **Entry:** one screen per metric. One numeric field per `FieldDef` (unit as suffix), date+time defaulting to `clock.now()`, Save. Below: samples for this metric, newest `recordedAt` first; non-manual `source` shown. Tap row → edit that id. Delete with confirm. “New sample” resets the form. Back → List.
-- **Add metric:** label; 1..N fields of (label, unit); add/remove field (minimum 1). Copy: *“All fields share one graph axis; use the same unit.”* Save: metric `id` = UUID, each field `id` = UUID. Back → List.
-- **Edit metric:** same form; field count and ids frozen (no add/remove field). Only `label` / per-field `label` and `unit` editable. Save calls `upsertMetric` with the same ids.
+- **Add metric:** label; graph min and max (required on save); 1..N fields of (label, unit, color from `SERIES_COLORS`); add/remove field (minimum 1). Copy: *“All fields share one graph axis; use the same unit.”* Save: metric `id` = UUID, each field `id` = UUID. Back → List.
+- **Edit metric:** same form; field count and ids frozen (no add/remove field). `label` / per-field `label`, `unit`, and **color** and graph min/max editable. Save calls `upsertMetric` with the same ids.
 - **Graphs:** multi-select from **catalog** metrics. Default: `defaultSelectedMetricIds`. Range chips: 7d / 30d / 90d / 1y / All / Custom. Average: Off / Daily / Weekly / Monthly. Vertical stack of charts, one metric per chart, shared `[start,end)`.
 - **Settings:** WebDAV URL, username, password, insecure-TLS checkbox, Backup now, Restore now, Reset local data (visible only in Corrupt), last backup/restore time, last error.
 
@@ -308,7 +308,7 @@ class AppViewModel(
 | `entryFieldText: Map<String,String>` | VM | typing, load-for-edit | |
 | `entryRecordedAt` | VM | picker / default now | |
 | `entryError` | VM | parse fail | |
-| `addLabel`, `addFields` | VM | Add/Edit metric form | Edit: fields ids carried alongside |
+| `addLabel`, `addFields`, `addGraphMin`, `addGraphMax` | VM | Add/Edit metric form | Edit: fields ids carried alongside; graph min/max prefilled from `resolvedGraphRange` |
 | `graphSelectedIds: Set<String>` | VM | chips; **initial Ready only** if the set is empty, assign `defaultSelectedMetricIds`. After `replaceAll` / `resetLocalData` always reassign (see `applyCatalogReset`). After `deleteMetric` use `selectionAfterDelete` | Catalog ids, not hard-coded built-ins |
 | `rangePreset`, `customFrom`, `customTo` | VM | Graph chips/pickers | |
 | `averageMode` | VM | Graph | |
@@ -723,6 +723,8 @@ Catalog only (user metrics included). Not hard-coded built-in ids. After a resto
 
 One chart per **selected** metric, stacked, shared `[start,end)`. N fields = N series on **one** y-axis (KD-20). Blood pressure is three series (systolic, diastolic, pulse) on that one axis. Pulse (`bpm`) is mixed-unit with mmHg; the y-scale is dominated by systolic/diastolic (~100–140) and pulse (~60–80) sits in the lower portion of the same scale. **Do not** split the BP chart or add a second axis. Do not overlay two metrics on one canvas.
 
+Canvas draws Y ticks via `yAxisTicks` on `chartYDomain`; faint horizontal grid (`MaterialTheme.colorScheme.onSurface` at alpha 0.12) across the **plot** only; labels in a left gutter (right-aligned, onSurface ~70%, ~11.sp), vertically centered on each tick. Axis is shown when a domain exists even if the series is empty (graph range, no samples). `project` takes `padLeftPx` (default `padPx`) so inner x starts after the gutter; downsample `widthPx` is the inner plot width, not the full canvas. Draw order: grid → series (solid / lighter-dashed overlay) → labels. **Do not** add an X axis.
+
 #### Pipeline (normative, in this order)
 
 For each selected metric, for each field:
@@ -730,8 +732,8 @@ For each selected metric, for each field:
 1. **Filter:** points `(recordedAt, values[fieldId])` with finite y, `start <= t < end`, sorted by `t`. Skip missing keys.
 2. **Raw series** = that list.
 3. **Means:** if `AverageMode != Off`, `bucketMeans(raw, mode, zone, start)` — **already filtered**, so partial weeks/months are means of **in-range points only**. Each mean’s `t` is `max(bucketOrigin, start)` so overlay points stay in `[start, end)` (a Friday sample in a Wednesday 7d window still plots on the left edge, not at Monday 00:00).
-4. **Downsample** raw (and means separately) with `downsample(points, start, end, widthPx)`.
-5. **Project** the downsampled series together (shared y-domain of **those** input series).
+4. **Downsample** raw (and means separately) with `downsample(points, start, end, widthPx)` where `widthPx` is the **inner plot width** (canvas minus left gutter minus right pad).
+5. **Project** the downsampled series together. Y-domain is `chartYDomain` (`resolvedGraphRange(metric)` if both finite and min < max; else auto min/max of the plotted series with 5% pad, equal-y ±1). Ticks use that same domain. No domain (no range and no points): no grid or labels.
 
 ```kotlin
 enum class AverageMode { Off, Daily, Weekly, Monthly }
@@ -755,7 +757,7 @@ fun bucketMeans(
 - Caller never passes `Off` into `bucketMeans`.
 - Do **not** expand `project`’s x-domain to `min(start, min t)`; clamping is the only placement rule.
 
-When overlay is on: draw downsampled raw as points, means as a line. Legend: field label + unit.
+When overlay is on: draw downsampled raw as a **solid** polyline through samples then dots; means as a **lighter** (`lightenArgb`, t=0.45) **and dashed** line (`PathEffect.dashPathEffect`, `2.dp` stroke, Round cap). Single mean point: a lighter circle, no dash. Caption under the average chips when `averageMode != Off`: `Lighter dashed line is the daily average.` / `weekly` / `monthly` (mode name lowercase). Test tag `caption-average-overlay`. When Off, that node is absent. Legend: field label + unit in `resolvedFieldColor` (stored field color, else `seriesColor(id)`).
 
 ```kotlin
 data class Series(
@@ -763,6 +765,7 @@ data class Series(
     val label: String,
     val unit: String,
     val points: List<Point>,
+    val color: Int = seriesColor(id),
 )
 
 data class Px(val x: Float, val y: Float)  // JVM-safe; Canvas maps Px → Offset
@@ -779,6 +782,10 @@ fun downsample(
     //       clamp to [0, widthPx-1]; average y per column; t = column center Instant.
 }
 
+fun chartYDomain(ys: List<Double>, yMin: Double?, yMax: Double?): Pair<Double, Double>?
+fun yAxisTicks(yMin: Double, yMax: Double, targetCount: Int = 5): List<Double>
+fun formatAxisTick(value: Double): String
+
 fun project(
     series: List<Series>,
     start: java.time.Instant,
@@ -786,16 +793,24 @@ fun project(
     widthPx: Float,
     heightPx: Float,
     padPx: Float,
+    yMin: Double? = null,
+    yMax: Double? = null,
+    padLeftPx: Float = padPx,
 ): List<List<Px>> {
-    // x domain [start, end). y domain = min/max of all input series y; pad 5% of (max-min);
-    // if min==max: use min-1 .. max+1. Pixel rect inset by padPx.
+    // x domain [start, end). Y-domain is chartYDomain(all series y, yMin, yMax): if yMin and
+    // yMax are both finite and yMin < yMax, that is the y-domain (no 5% pad); else auto
+    // min/max of ys with 5% pad (min==max → min-1 .. max+1). graphMin → bottom of inner
+    // area, graphMax → top. Inner x starts at padLeftPx; inner width = widthPx - padLeftPx
+    // - padPx; vertical pad is padPx. Points outside the domain still project (Canvas clips).
     // If no points or end<=start or width/height <= 0: list of empty lists (same arity).
 }
 ```
 
-Canvas is a thin wrapper around `project` output. Content description `chart-{metricId}`.
+`yAxisTicks` uses nice numbers (1 / 2 / 2.5 / 5 × 10^n), about 4–6 ticks, and **always includes the exact domain min and max**. Integer ticks format as `"100"` (no `.0`); otherwise trailing zeros are trimmed (`"0.5"`). Invalid/empty domain → no ticks.
 
-**Colors:** eight literals, index `Math.floorMod(id.hashCode(), 8)` (not `abs`, which is negative for `Int.MIN_VALUE`):
+Canvas is a thin wrapper around `project` output plus the Y-axis (grid then labels). Content description `chart-{metricId}`.
+
+**Colors:** eight Tableau-style literals (`SERIES_COLORS`). Default index `Math.floorMod(id.hashCode(), 8)` (not `abs`, which is negative for `Int.MIN_VALUE`). Each `FieldDef` may store an optional packed ARGB `color`; graphs, dots, and the legend use `resolvedFieldColor`. Overlay uses `lightenArgb(thatColor)`. Built-ins leave `color` null so plots match `seriesColor(id)` until the user picks a color. After Edit+Save the hex is stored.
 
 ```kotlin
 val SERIES_COLORS = intArrayOf(
@@ -838,16 +853,20 @@ fun mergeEditedSample(
     )
 }
 
+data class FieldEdit(val label: String, val unit: String, val color: Int)
+
 fun mergeEditedMetric(
     existing: MetricDef,
     label: String,
-    fieldLabelUnits: List<Pair<String, String>>,  // parallel to existing.fields, same size
+    fields: List<FieldEdit>,  // parallel to existing.fields, same size
+    graphMin: Double,
+    graphMax: Double,
 ): MetricDef {
-    require(fieldLabelUnits.size == existing.fields.size)
-    val fields = existing.fields.zip(fieldLabelUnits) { old, (lab, unit) ->
-        old.copy(label = lab, unit = unit)  // id + extras preserved
+    require(fields.size == existing.fields.size)
+    val merged = existing.fields.zip(fields) { old, edit ->
+        old.copy(label = edit.label, unit = edit.unit, color = edit.color)  // id + extras preserved
     }
-    return existing.copy(label = label, fields = fields)  // extras preserved
+    return existing.copy(label = label, fields = merged, graphMin = graphMin, graphMax = graphMax)
 }
 ```
 
@@ -855,9 +874,9 @@ New sample: `existing = null`. Edit sample: pass the row’s `Sample`; extra `va
 
 **Entry edit:** tap row loads values/timestamp into buffers (FieldDef keys only in the text fields); Save uses `mergeEditedSample(existing = that row, ...)`.
 
-**Add metric:** label non-blank; each field label non-blank; unit may be blank. ≥1 field.
+**Add metric:** label non-blank; each field label non-blank; unit may be blank. ≥1 field. Graph min and max required, numeric, min < max. Under each field, eight circular `SERIES_COLORS` swatches (`chip-field-color-{fieldIndex}-{paletteIndex}`); selected uses a 2.dp `onSurface` border.
 
-**Edit metric:** cannot add/remove fields; Save `mergeEditedMetric` then `upsertMetric`.
+**Edit metric:** cannot add/remove fields; graph min and max required as on add. Field color is editable (ids/count still frozen). Save `mergeEditedMetric` then `upsertMetric`.
 
 **Delete sample:** confirm.
 
@@ -902,6 +921,7 @@ data class FieldDef(
     val id: String,
     val label: String,
     val unit: String,
+    val color: Int? = null,  // packed ARGB; JSON `#RRGGBB`; null on old dumps
     val extras: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -909,6 +929,8 @@ data class MetricDef(
     val id: String,
     val label: String,
     val fields: List<FieldDef>,
+    val graphMin: Double? = null,
+    val graphMax: Double? = null,
     val extras: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -948,10 +970,14 @@ fun mergeEditedSample(
     idForNew: String,
 ): Sample
 
+data class FieldEdit(val label: String, val unit: String, val color: Int)
+
 fun mergeEditedMetric(
     existing: MetricDef,
     label: String,
-    fieldLabelUnits: List<Pair<String, String>>,
+    fields: List<FieldEdit>,
+    graphMin: Double,
+    graphMax: Double,
 ): MetricDef
 ```
 
@@ -978,6 +1004,8 @@ Pretty-printed object. Numbers are JSON numbers. Timestamps are ISO-8601 UTC (`I
     {
       "id": "weight",
       "label": "Weight",
+      "graphMin": 100,
+      "graphMax": 300,
       "fields": [
         { "id": "lb", "label": "Weight", "unit": "lb" }
       ]
@@ -985,6 +1013,8 @@ Pretty-printed object. Numbers are JSON numbers. Timestamps are ISO-8601 UTC (`I
     {
       "id": "bhb",
       "label": "BHB",
+      "graphMin": 0,
+      "graphMax": 5,
       "fields": [
         { "id": "mmol_l", "label": "BHB", "unit": "mmol/L" }
       ]
@@ -992,6 +1022,8 @@ Pretty-printed object. Numbers are JSON numbers. Timestamps are ISO-8601 UTC (`I
     {
       "id": "glucose",
       "label": "Blood glucose",
+      "graphMin": 50,
+      "graphMax": 250,
       "fields": [
         { "id": "mg_dl", "label": "Glucose", "unit": "mg/dL" }
       ]
@@ -999,6 +1031,8 @@ Pretty-printed object. Numbers are JSON numbers. Timestamps are ISO-8601 UTC (`I
     {
       "id": "blood_pressure",
       "label": "Blood pressure",
+      "graphMin": 40,
+      "graphMax": 200,
       "fields": [
         { "id": "systolic", "label": "Systolic", "unit": "mmHg" },
         { "id": "diastolic", "label": "Diastolic", "unit": "mmHg" },
@@ -1035,7 +1069,7 @@ A v2 sibling such as `"note": "fasted"` on a sample is stored in `Sample.extras[
 
 1. Parse JSON. If not an object, throw.
 2. `exportedAt`: string Instant, or `Instant.EPOCH` if missing/unparseable.
-3. `metrics`: array; skip element if `id` or `label` blank. `fields`: skip field if `id` blank; missing `label`/`unit` → `""`. **Within a metric, duplicate field `id`: keep the last, skip earlier.** Other keys on metric/field → `extras`.
+3. `metrics`: array; skip element if `id` or `label` blank. `fields`: skip field if `id` blank; missing `label`/`unit` → `""`. Optional `color`: hex string `#RRGGBB` or `#AARRGGBB`; invalid/missing → null (do not fail the field). Encode `color` only when non-null, as `#RRGGBB`. `graphMin`/`graphMax`: JSON numbers via `numericOrNull`; if either is missing/non-finite or `graphMin >= graphMax`, treat both as null. **Within a metric, duplicate field `id`: keep the last, skip earlier.** Other keys on metric/field → `extras`. Encode `graphMin`/`graphMax` only when both are non-null (omit keys if null).
 4. `samples`: skip if `id` or `metricId` blank, or `recordedAt` unparseable. `modifiedAt` missing → `recordedAt`. `source` missing → `"manual"`. `values`: keep entries whose JSON value is a number **or a numeric string parsed with `String.toDouble()` (JSON/English, not `NumberFormat`)**; skip null/non-numeric; skip non-finite. Other sample keys → `extras`.
 5. **Duplicate `metrics[].id`:** last-wins (later array element replaces earlier). **Duplicate `samples[].id`:** last-wins. Apply this in `decode` and again in `replaceAll` / `commit`.
 6. Orphans kept (`metricId` not in catalog).
@@ -1240,7 +1274,7 @@ Standing rule: no functionality without tests. No live WebDAV. PRs 1–8 are JVM
 - `selectionAfterDelete`: removing the last selected id re-runs `defaultSelectedMetricIds`.
 - Weekly overlay x: zone with Wednesday `now`, `D7`, one Friday sample → `bucketMeans` emits `t >= start` (not Monday 00:00); `project` of that point is a finite `Px` inside the pad.
 - `mergeEditedSample`: existing **weight** sample with `extras["note"]` and extra `values["pulse"]` plus parsed `lb` → encode still has `note` and extra `pulse`; `source` stays `bluetooth` if it was.
-- `mergeEditedMetric`: field extras and metric extras survive a label change.
+- `mergeEditedMetric`: field extras and metric extras survive a label change; field color is updated.
 
 ### `downsample` / `project`
 

@@ -134,6 +134,13 @@ fun GraphScreen(
                 )
             }
         }
+        if (averageMode != AverageMode.Off) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Lighter dashed line is the ${averageMode.name.lowercase()} average.",
+                modifier = Modifier.testTag("caption-average-overlay"),
+            )
+        }
         val start = bounds?.first
         val end = bounds?.second
         metrics.filter { it.id in selectedIds }.forEach { metric ->
@@ -144,7 +151,7 @@ fun GraphScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 metric.fields.forEach { field ->
-                    val color = Color(seriesColor(field.id))
+                    val color = Color(resolvedFieldColor(field))
                     val unit = if (field.unit.isEmpty()) "" else " ${field.unit}"
                     Text(
                         text = "${field.label}$unit",
@@ -161,11 +168,18 @@ fun GraphScreen(
                             label = field.label,
                             unit = field.unit,
                             points = filterFieldPoints(samples, metric.id, field.id, start, end),
+                            color = resolvedFieldColor(field),
                         )
                     }
                 } else {
                     metric.fields.map { field ->
-                        Series(field.id, field.label, field.unit, emptyList())
+                        Series(
+                            id = field.id,
+                            label = field.label,
+                            unit = field.unit,
+                            points = emptyList(),
+                            color = resolvedFieldColor(field),
+                        )
                     }
                 }
             val means =
@@ -176,12 +190,15 @@ fun GraphScreen(
                 } else {
                     emptyList()
                 }
+            val yRange = resolvedGraphRange(metric)
             Chart(
                 metricId = metric.id,
                 raw = raw,
                 means = means,
                 start = start ?: Instant.EPOCH,
                 end = end ?: Instant.EPOCH,
+                yMin = yRange?.first,
+                yMax = yRange?.second,
             )
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.bohme.tracker.FieldForm
@@ -35,15 +36,20 @@ class AddMetricScreenTest {
                 AddMetricScreen(
                     label = label,
                     fields = fields,
+                    graphMin = "",
+                    graphMax = "",
                     canChangeFieldCount = true,
                     formError = null,
                     onLabelChange = { label = it },
+                    onGraphMinChange = {},
+                    onGraphMaxChange = {},
                     onFieldLabelChange = { i, v ->
                         fields = fields.mapIndexed { idx, f -> if (idx == i) f.copy(label = v) else f }
                     },
                     onFieldUnitChange = { i, v ->
                         fields = fields.mapIndexed { idx, f -> if (idx == i) f.copy(unit = v) else f }
                     },
+                    onFieldColorChange = { _, _ -> },
                     onAddField = {},
                     onRemoveField = {},
                     onSave = { saves++ },
@@ -70,11 +76,16 @@ class AddMetricScreenTest {
                 AddMetricScreen(
                     label = "M",
                     fields = fields,
+                    graphMin = "0",
+                    graphMax = "100",
                     canChangeFieldCount = true,
                     formError = null,
                     onLabelChange = {},
+                    onGraphMinChange = {},
+                    onGraphMaxChange = {},
                     onFieldLabelChange = { _, _ -> },
                     onFieldUnitChange = { _, _ -> },
+                    onFieldColorChange = { _, _ -> },
                     onAddField = {
                         adds++
                         fields = fields + FieldForm(label = "B")
@@ -109,11 +120,16 @@ class AddMetricScreenTest {
                 AddMetricScreen(
                     label = "",
                     fields = listOf(FieldForm()),
+                    graphMin = "",
+                    graphMax = "",
                     canChangeFieldCount = true,
                     formError = "Label is required.",
                     onLabelChange = {},
+                    onGraphMinChange = {},
+                    onGraphMaxChange = {},
                     onFieldLabelChange = { _, _ -> },
                     onFieldUnitChange = { _, _ -> },
+                    onFieldColorChange = { _, _ -> },
                     onAddField = {},
                     onRemoveField = {},
                     onSave = {},
@@ -130,11 +146,16 @@ class AddMetricScreenTest {
                 AddMetricScreen(
                     label = "Weight",
                     fields = listOf(FieldForm(id = "lb", label = "Weight", unit = "lb")),
+                    graphMin = "100",
+                    graphMax = "300",
                     canChangeFieldCount = false,
                     formError = null,
                     onLabelChange = {},
+                    onGraphMinChange = {},
+                    onGraphMaxChange = {},
                     onFieldLabelChange = { _, _ -> },
                     onFieldUnitChange = { _, _ -> },
+                    onFieldColorChange = { _, _ -> },
                     onAddField = {},
                     onRemoveField = {},
                     onSave = {},
@@ -145,5 +166,68 @@ class AddMetricScreenTest {
         composeRule.onAllNodesWithTag("btn-remove-field-0").assertCountEquals(0)
         composeRule.onNodeWithTag("field-metric-label").assertIsDisplayed()
         composeRule.onNodeWithTag("btn-save-metric").assertIsDisplayed()
+    }
+
+    @Test
+    fun typeGraphMinAndMaxUpdatesState() {
+        var min by mutableStateOf("")
+        var max by mutableStateOf("")
+        composeRule.setContent {
+            TrackerTheme {
+                AddMetricScreen(
+                    label = "BHB",
+                    fields = listOf(FieldForm(label = "BHB", unit = "mmol/L")),
+                    graphMin = min,
+                    graphMax = max,
+                    canChangeFieldCount = true,
+                    formError = null,
+                    onLabelChange = {},
+                    onGraphMinChange = { min = it },
+                    onGraphMaxChange = { max = it },
+                    onFieldLabelChange = { _, _ -> },
+                    onFieldUnitChange = { _, _ -> },
+                    onFieldColorChange = { _, _ -> },
+                    onAddField = {},
+                    onRemoveField = {},
+                    onSave = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("field-graph-min").performTextInput("0")
+        composeRule.onNodeWithTag("field-graph-max").performTextInput("5")
+        assertEquals("0", min)
+        assertEquals("5", max)
+    }
+
+    @Test
+    fun tapColorChipSetsFieldColor() {
+        var fields by mutableStateOf(listOf(FieldForm()))
+        composeRule.setContent {
+            TrackerTheme {
+                AddMetricScreen(
+                    label = "Weight",
+                    fields = fields,
+                    graphMin = "100",
+                    graphMax = "300",
+                    canChangeFieldCount = true,
+                    formError = null,
+                    onLabelChange = {},
+                    onGraphMinChange = {},
+                    onGraphMaxChange = {},
+                    onFieldLabelChange = { _, _ -> },
+                    onFieldUnitChange = { _, _ -> },
+                    onFieldColorChange = { i, c ->
+                        fields = fields.mapIndexed { idx, f ->
+                            if (idx == i) f.copy(color = c) else f
+                        }
+                    },
+                    onAddField = {},
+                    onRemoveField = {},
+                    onSave = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("chip-field-color-0-3").performScrollTo().performClick()
+        assertEquals(SERIES_COLORS[3], fields[0].color)
     }
 }

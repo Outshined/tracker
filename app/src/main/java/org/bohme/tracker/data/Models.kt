@@ -7,6 +7,7 @@ data class FieldDef(
     val id: String,
     val label: String,
     val unit: String,
+    val color: Int? = null,
     val extras: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -14,6 +15,8 @@ data class MetricDef(
     val id: String,
     val label: String,
     val fields: List<FieldDef>,
+    val graphMin: Double? = null,
+    val graphMax: Double? = null,
     val extras: Map<String, JsonElement> = emptyMap(),
 )
 
@@ -71,14 +74,18 @@ fun mergeEditedSample(
     )
 }
 
+data class FieldEdit(val label: String, val unit: String, val color: Int)
+
 fun mergeEditedMetric(
     existing: MetricDef,
     label: String,
-    fieldLabelUnits: List<Pair<String, String>>,
+    fields: List<FieldEdit>,
+    graphMin: Double,
+    graphMax: Double,
 ): MetricDef {
-    require(fieldLabelUnits.size == existing.fields.size)
-    val fields = existing.fields.zip(fieldLabelUnits) { old, (lab, unit) ->
-        old.copy(label = lab, unit = unit)
+    require(fields.size == existing.fields.size)
+    val merged = existing.fields.zip(fields) { old, edit ->
+        old.copy(label = edit.label, unit = edit.unit, color = edit.color)
     }
-    return existing.copy(label = label, fields = fields)
+    return existing.copy(label = label, fields = merged, graphMin = graphMin, graphMax = graphMax)
 }

@@ -40,6 +40,8 @@ import org.bohme.tracker.data.Store
 import org.bohme.tracker.stats.AverageMode
 import org.bohme.tracker.stats.RangePreset
 import org.bohme.tracker.stats.defaultSelectedMetricIds
+import org.bohme.tracker.ui.SERIES_COLORS
+import org.bohme.tracker.ui.resolvedFieldColor
 import org.bohme.tracker.webdav.WebDavClient
 
 class AppViewModelTest {
@@ -149,6 +151,8 @@ class AppViewModelTest {
         vm.addField()
         vm.setFieldLabel(1, "Goal")
         vm.setFieldUnit(1, "")
+        vm.setAddGraphMin("0")
+        vm.setAddGraphMax("10000")
         vm.saveMetric()
         io.runAll()
         assertEquals(MetricsSub.List, vm.state.value.metricsSub)
@@ -157,11 +161,20 @@ class AppViewModelTest {
         assertTrue(created.id.isNotBlank())
         assertEquals(listOf("Count", "Goal"), created.fields.map { it.label })
         assertEquals(listOf("steps", ""), created.fields.map { it.unit })
+        assertEquals(0.0, created.graphMin!!, 0.0)
+        assertEquals(10000.0, created.graphMax!!, 0.0)
         assertTrue(created.fields.all { it.id.isNotBlank() && it.id != created.id })
         assertEquals(2, created.fields.map { it.id }.toSet().size)
+        assertEquals(listOf(SERIES_COLORS[0], SERIES_COLORS[1]), created.fields.map { it.color })
+        assertEquals("", vm.state.value.addGraphMin)
+        assertEquals("", vm.state.value.addGraphMax)
         val reloaded = Store(file, Clock { t0 })
         assertEquals(LoadState.Ready, reloaded.load())
-        assertEquals("Steps", reloaded.metrics().single { it.id == created.id }.label)
+        val onDisk = reloaded.metrics().single { it.id == created.id }
+        assertEquals("Steps", onDisk.label)
+        assertEquals(0.0, onDisk.graphMin!!, 0.0)
+        assertEquals(10000.0, onDisk.graphMax!!, 0.0)
+        assertEquals(listOf(SERIES_COLORS[0], SERIES_COLORS[1]), onDisk.fields.map { it.color })
     }
 
     @Test
@@ -172,6 +185,8 @@ class AppViewModelTest {
         vm.openEditMetric("weight")
         assertEquals(MetricsSub.Edit, vm.state.value.metricsSub)
         assertEquals("Weight", vm.state.value.addLabel)
+        assertEquals("100", vm.state.value.addGraphMin)
+        assertEquals("300", vm.state.value.addGraphMax)
         vm.setAddLabel("Massa")
         vm.setFieldLabel(0, "Peso")
         vm.setFieldUnit(0, "kg")
@@ -184,7 +199,57 @@ class AppViewModelTest {
         assertEquals(original.fields.map { it.id }, edited.fields.map { it.id })
         assertEquals("Peso", edited.fields.single().label)
         assertEquals("kg", edited.fields.single().unit)
+        assertEquals(resolvedFieldColor(original.fields.single()), edited.fields.single().color)
+        assertEquals(100.0, edited.graphMin!!, 0.0)
+        assertEquals(300.0, edited.graphMax!!, 0.0)
         assertEquals(MetricsSub.List, vm.state.value.metricsSub)
+    }
+
+    @Test
+    fun `edit metric save persists set field color`() {
+        createVm()
+        io.runAll()
+        vm.openEditMetric("weight")
+        assertEquals(
+            resolvedFieldColor(
+                vm.state.value.snapshot.metrics.first { it.id == "weight" }.fields.single(),
+            ),
+            vm.state.value.addFields.single().color,
+        )
+        vm.setFieldColor(0, SERIES_COLORS[3])
+        vm.saveMetric()
+        io.runAll()
+        val edited = vm.state.value.snapshot.metrics.first { it.id == "weight" }
+        assertEquals(SERIES_COLORS[3], edited.fields.single().color)
+        val reloaded = Store(file, Clock { t0 })
+        assertEquals(LoadState.Ready, reloaded.load())
+        assertEquals(
+            SERIES_COLORS[3],
+            reloaded.metrics().first { it.id == "weight" }.fields.single().color,
+        )
+    }
+
+    @Test
+    fun `openEditMetric weight prefills graph 100 and 300`() {
+        createVm()
+        io.runAll()
+        vm.openEditMetric("weight")
+        assertEquals("100", vm.state.value.addGraphMin)
+        assertEquals("300", vm.state.value.addGraphMax)
+    }
+
+    @Test
+    fun `saveMetric rejects blank graph range without persist`() {
+        createVm()
+        io.runAll()
+        val beforeIds = vm.state.value.snapshot.metrics.map { it.id }
+        vm.openAddMetric()
+        vm.setAddLabel("Steps")
+        vm.setFieldLabel(0, "Count")
+        vm.saveMetric()
+        assertEquals("Graph min and max are required.", vm.state.value.formError)
+        assertEquals(MetricsSub.Add, vm.state.value.metricsSub)
+        assertEquals(beforeIds, vm.state.value.snapshot.metrics.map { it.id })
     }
 
     @Test

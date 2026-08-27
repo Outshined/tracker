@@ -3,8 +3,10 @@ package org.bohme.tracker.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -105,5 +107,36 @@ class GraphScreenTest {
             composeRule.onNodeWithTag("chip-average-${mode.name}").performScrollTo().performClick()
         }
         assertEquals(AverageMode.entries.toList(), averages)
+    }
+
+    @Test
+    fun weeklyAverageShowsCaptionOffHidesIt() {
+        var average by mutableStateOf(AverageMode.Off)
+        composeRule.setContent {
+            TrackerTheme {
+                GraphScreen(
+                    metrics = metrics,
+                    samples = samples,
+                    selectedIds = setOf("weight"),
+                    rangePreset = RangePreset.D7,
+                    customFrom = null,
+                    customTo = null,
+                    averageMode = average,
+                    now = now,
+                    zone = zone,
+                    onToggleMetric = {},
+                    onRangePreset = {},
+                    onCustomFrom = {},
+                    onCustomTo = {},
+                    onAverageMode = { average = it },
+                )
+            }
+        }
+        composeRule.onAllNodesWithTag("caption-average-overlay").assertCountEquals(0)
+        composeRule.onNodeWithTag("chip-average-Weekly").performScrollTo().performClick()
+        composeRule.onNodeWithTag("caption-average-overlay").assertIsDisplayed()
+        composeRule.onNodeWithText("Lighter dashed line is the weekly average.").assertIsDisplayed()
+        composeRule.onNodeWithTag("chip-average-Off").performScrollTo().performClick()
+        composeRule.onAllNodesWithTag("caption-average-overlay").assertCountEquals(0)
     }
 }

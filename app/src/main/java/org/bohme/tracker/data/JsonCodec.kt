@@ -20,8 +20,8 @@ object JsonCodec {
     }
 
     private val snapshotKnown = setOf("exportedAt", "metrics", "samples")
-    private val metricKnown = setOf("id", "label", "fields")
-    private val fieldKnown = setOf("id", "label", "unit")
+    private val metricKnown = setOf("id", "label", "fields", "graphMin", "graphMax")
+    private val fieldKnown = setOf("id", "label", "unit", "color")
     private val sampleKnown = setOf("id", "metricId", "recordedAt", "modifiedAt", "source", "values")
 
     fun decode(text: String): Snapshot {
@@ -55,11 +55,17 @@ object JsonCodec {
             val obj = item as? JsonObject ?: continue
             val id = stringOrNull(obj["id"])?.takeUnless { it.isBlank() } ?: continue
             val label = stringOrNull(obj["label"])?.takeUnless { it.isBlank() } ?: continue
+            val graphMin = obj["graphMin"]?.let { numericOrNull(it) }
+            val graphMax = obj["graphMax"]?.let { numericOrNull(it) }
+            val rangeOk =
+                graphMin != null && graphMax != null && graphMin < graphMax
             out.add(
                 MetricDef(
                     id = id,
                     label = label,
                     fields = lastWinsById(decodeFields(obj["fields"])) { it.id },
+                    graphMin = if (rangeOk) graphMin else null,
+                    graphMax = if (rangeOk) graphMax else null,
                     extras = extrasOf(obj, metricKnown),
                 ),
             )
@@ -78,6 +84,7 @@ object JsonCodec {
                     id = id,
                     label = stringOrNull(obj["label"]) ?: "",
                     unit = stringOrNull(obj["unit"]) ?: "",
+                    color = stringOrNull(obj["color"])?.let(::parseColorHex),
                     extras = extrasOf(obj, fieldKnown),
                 ),
             )
@@ -126,6 +133,16 @@ object JsonCodec {
             "label" to JsonPrimitive(metric.label),
             "fields" to JsonArray(metric.fields.map { encodeField(it) }),
         )
+        val graphMin = metric.graphMin
+        val graphMax = metric.graphMax
+        if (
+            graphMin != null && graphMax != null &&
+            graphMin.isFinite() && graphMax.isFinite() &&
+            graphMin < graphMax
+        ) {
+            known["graphMin"] = JsonPrimitive(graphMin)
+            known["graphMax"] = JsonPrimitive(graphMax)
+        }
         return overlay(metric.extras, known)
     }
 
@@ -135,6 +152,10 @@ object JsonCodec {
             "label" to JsonPrimitive(field.label),
             "unit" to JsonPrimitive(field.unit),
         )
+        val color = field.color
+        if (color != null) {
+            known["color"] = JsonPrimitive(formatColorHex(color))
+        }
         return overlay(field.extras, known)
     }
 

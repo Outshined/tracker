@@ -92,20 +92,30 @@ class MergeEditedTest {
             ),
             extras = mapOf("color" to JsonPrimitive("blue")),
         )
-        val merged = mergeEditedMetric(existing, "Massa", listOf("Peso" to "kg"))
+        val color = 0xFF2CA02C.toInt()
+        val merged = mergeEditedMetric(
+            existing,
+            "Massa",
+            listOf(FieldEdit("Peso", "kg", color)),
+            100.0,
+            300.0,
+        )
         assertEquals("weight", merged.id)
         assertEquals("Massa", merged.label)
         assertEquals("lb", merged.fields.single().id)
         assertEquals("Peso", merged.fields.single().label)
         assertEquals("kg", merged.fields.single().unit)
+        assertEquals(color, merged.fields.single().color)
+        assertEquals(100.0, merged.graphMin!!, 0.0)
+        assertEquals(300.0, merged.graphMax!!, 0.0)
         assertEquals(JsonPrimitive("scale"), merged.fields.single().extras.getValue("hint"))
         assertEquals(JsonPrimitive("blue"), merged.extras.getValue("color"))
     }
 
     @Test
-    fun `mergeEditedMetric rejects fieldLabelUnits size mismatch`() {
+    fun `mergeEditedMetric rejects fields size mismatch`() {
         assertThrows(IllegalArgumentException::class.java) {
-            mergeEditedMetric(weight, "Weight", emptyList())
+            mergeEditedMetric(weight, "Weight", emptyList(), 100.0, 300.0)
         }
     }
 }

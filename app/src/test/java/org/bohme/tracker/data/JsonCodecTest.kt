@@ -483,6 +483,76 @@ class JsonCodecTest {
     }
 
     @Test
+    fun `roundtrip graphMin graphMax on a metric`() {
+        val metric = MetricDef(
+            id = "custom",
+            label = "Custom",
+            fields = listOf(FieldDef(id = "f", label = "F", unit = "u")),
+            graphMin = 0.0,
+            graphMax = 10.0,
+        )
+        val snapshot = Snapshot(exportedAt = exported, metrics = listOf(metric), samples = emptyList())
+        val decoded = JsonCodec.decode(JsonCodec.encode(snapshot)).metrics.single()
+        assertEquals(0.0, decoded.graphMin!!, 0.0)
+        assertEquals(10.0, decoded.graphMax!!, 0.0)
+        val obj = Json.parseToJsonElement(JsonCodec.encode(snapshot))
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
+        assertEquals(0.0, obj.getValue("graphMin").jsonPrimitive.double, 0.0)
+        assertEquals(10.0, obj.getValue("graphMax").jsonPrimitive.double, 0.0)
+    }
+
+    @Test
+    fun `old metric JSON without graph keys decodes nulls and omits on encode`() {
+        val decoded = JsonCodec.decode(
+            """
+            {
+              "metrics": [
+                { "id": "weight", "label": "Weight", "fields": [{ "id": "lb", "label": "Weight", "unit": "lb" }] }
+              ]
+            }
+            """.trimIndent(),
+        )
+        val metric = decoded.metrics.single()
+        assertEquals(null, metric.graphMin)
+        assertEquals(null, metric.graphMax)
+        val obj = Json.parseToJsonElement(JsonCodec.encode(decoded))
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
+        assertFalse(obj.containsKey("graphMin"))
+        assertFalse(obj.containsKey("graphMax"))
+    }
+
+    @Test
+    fun `metric extra sibling keys still extras with graphMin graphMax`() {
+        val decoded = JsonCodec.decode(
+            """
+            {
+              "metrics": [
+                {
+                  "id": "bhb",
+                  "label": "BHB",
+                  "graphMin": 0,
+                  "graphMax": 5,
+                  "color": "blue",
+                  "fields": [{ "id": "mmol_l", "label": "BHB", "unit": "mmol/L" }]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+        val metric = decoded.metrics.single()
+        assertEquals(0.0, metric.graphMin!!, 0.0)
+        assertEquals(5.0, metric.graphMax!!, 0.0)
+        assertEquals("blue", metric.extras.getValue("color").jsonPrimitive.content)
+        assertFalse(metric.extras.containsKey("graphMin"))
+        assertFalse(metric.extras.containsKey("graphMax"))
+        val obj = Json.parseToJsonElement(JsonCodec.encode(decoded))
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
+        assertEquals("blue", obj.getValue("color").jsonPrimitive.content)
+        assertEquals(0.0, obj.getValue("graphMin").jsonPrimitive.double, 0.0)
+        assertEquals(5.0, obj.getValue("graphMax").jsonPrimitive.double, 0.0)
+    }
+
+    @Test
     fun `orphan sample with unknown metricId is kept`() {
         val decoded = JsonCodec.decode(
             """
@@ -501,5 +571,123 @@ class JsonCodecTest {
         )
         assertEquals("gone", decoded.samples.single().metricId)
         assertEquals(1.0, decoded.samples.single().values.getValue("x"), 0.0)
+    }
+
+    @Test
+    fun `field color hex roundtrip six and eight digit`() {
+        val metric = MetricDef(
+            id = "custom",
+            label = "Custom",
+            fields = listOf(
+                FieldDef(
+                    id = "f",
+                    label = "F",
+                    unit = "u",
+                    color = 0xFF1F77B4.toInt(),
+                ),
+            ),
+        )
+        val snapshot = Snapshot(exportedAt = exported, metrics = listOf(metric), samples = emptyList())
+        val encoded = Json.parseToJsonElement(JsonCodec.encode(snapshot))
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
+            .getValue("fields").jsonArray.single().jsonObject
+        assertEquals("#1F77B4", encoded.getValue("color").jsonPrimitive.content)
+        val decoded = JsonCodec.decode(JsonCodec.encode(snapshot)).metrics.single().fields.single()
+        assertEquals(0xFF1F77B4.toInt(), decoded.color)
+        val fromEight = JsonCodec.decode(
+            """
+            {
+              "metrics": [
+                {
+                  "id": "custom",
+                  "label": "Custom",
+                  "fields": [
+                    { "id": "f", "label": "F", "unit": "u", "color": "#FF1F77B4" }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        ).metrics.single().fields.single()
+        assertEquals(0xFF1F77B4.toInt(), fromEight.color)
+    }
+
+    @Test
+    fun `missing and invalid field color decode to null and omit on encode`() {
+        val missing = JsonCodec.decode(
+            """
+            {
+              "metrics": [
+                {
+                  "id": "weight",
+                  "label": "Weight",
+                  "fields": [{ "id": "lb", "label": "Weight", "unit": "lb" }]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+        assertEquals(null, missing.metrics.single().fields.single().color)
+        val missingObj = Json.parseToJsonElement(JsonCodec.encode(missing))
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
+            .getValue("fields").jsonArray.single().jsonObject
+        assertFalse(missingObj.containsKey("color"))
+        val invalid = JsonCodec.decode(
+            """
+            {
+              "metrics": [
+                {
+                  "id": "weight",
+                  "label": "Weight",
+                  "fields": [
+                    { "id": "lb", "label": "Weight", "unit": "lb", "color": "#GG0000" }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+        val field = invalid.metrics.single().fields.single()
+        assertEquals("lb", field.id)
+        assertEquals("Weight", field.label)
+        assertEquals(null, field.color)
+        val invalidObj = Json.parseToJsonElement(JsonCodec.encode(invalid))
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
+            .getValue("fields").jsonArray.single().jsonObject
+        assertFalse(invalidObj.containsKey("color"))
+    }
+
+    @Test
+    fun `field extra not named color round-trips beside stored color`() {
+        val decoded = JsonCodec.decode(
+            """
+            {
+              "metrics": [
+                {
+                  "id": "weight",
+                  "label": "Weight",
+                  "fields": [
+                    {
+                      "id": "lb",
+                      "label": "Weight",
+                      "unit": "lb",
+                      "color": "#1F77B4",
+                      "hint": "scale"
+                    }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+        val field = decoded.metrics.single().fields.single()
+        assertEquals(0xFF1F77B4.toInt(), field.color)
+        assertEquals("scale", field.extras.getValue("hint").jsonPrimitive.content)
+        assertFalse(field.extras.containsKey("color"))
+        val encodedField = Json.parseToJsonElement(JsonCodec.encode(decoded))
+            .jsonObject.getValue("metrics").jsonArray.single().jsonObject
+            .getValue("fields").jsonArray.single().jsonObject
+        assertEquals("#1F77B4", encodedField.getValue("color").jsonPrimitive.content)
+        assertEquals("scale", encodedField.getValue("hint").jsonPrimitive.content)
     }
 }

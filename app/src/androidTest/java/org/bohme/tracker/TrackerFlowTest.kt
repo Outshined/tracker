@@ -71,7 +71,9 @@ class TrackerFlowTest {
         composeRule.onNodeWithTag("btn-add-metric").performClick()
         composeRule.onNodeWithTag("field-metric-label").performTextInput("Steps")
         composeRule.onNodeWithTag("field-field-label-0").performTextInput("Count")
-        composeRule.onNodeWithTag("btn-save-metric").performClick()
+        composeRule.onNodeWithTag("field-graph-min").performTextInput("0")
+        composeRule.onNodeWithTag("field-graph-max").performTextInput("10000")
+        composeRule.onNodeWithTag("btn-save-metric").performScrollTo().performClick()
         waitForText("Steps")
         composeRule.onNodeWithText("Steps").assertIsDisplayed()
     }

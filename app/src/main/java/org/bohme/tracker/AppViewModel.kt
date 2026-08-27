@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import org.bohme.tracker.data.Clock
 import org.bohme.tracker.data.ConfigStore
 import org.bohme.tracker.data.FieldDef
+import org.bohme.tracker.data.FieldEdit
 import org.bohme.tracker.data.JsonCodec
 import org.bohme.tracker.data.LoadState
 import org.bohme.tracker.data.MetricDef
@@ -34,10 +35,14 @@ import org.bohme.tracker.stats.RangePreset
 import org.bohme.tracker.stats.defaultSelectedMetricIds
 import org.bohme.tracker.stats.formatLocaleNumber
 import org.bohme.tracker.stats.localDateOf
+import org.bohme.tracker.stats.parseLocaleNumber
 import org.bohme.tracker.stats.parseRequiredFields
 import org.bohme.tracker.stats.sampleOnLocalDate
 import org.bohme.tracker.stats.selectionAfterDelete
 import org.bohme.tracker.stats.todayFieldKey
+import org.bohme.tracker.ui.SERIES_COLORS
+import org.bohme.tracker.ui.resolvedFieldColor
+import org.bohme.tracker.ui.resolvedGraphRange
 import org.bohme.tracker.webdav.WebDavClient
 
 enum class Tab { Metrics, Graphs, Settings }
@@ -48,6 +53,7 @@ data class FieldForm(
     val id: String = "",
     val label: String = "",
     val unit: String = "",
+    val color: Int = SERIES_COLORS[0],
 )
 
 data class AppUiState(
@@ -67,6 +73,8 @@ data class AppUiState(
     val todayError: String? = null,
     val addLabel: String = "",
     val addFields: List<FieldForm> = listOf(FieldForm()),
+    val addGraphMin: String = "",
+    val addGraphMax: String = "",
     val graphSelectedIds: Set<String> = emptySet(),
     val rangePreset: RangePreset = RangePreset.D7,
     val customFrom: LocalDate? = null,
@@ -83,10 +91,21 @@ data class AppUiState(
     val restoreNeedsExtraConfirm: Boolean = false,
 )
 
-fun validateMetricForm(label: String, fields: List<FieldForm>): String? {
+fun validateMetricForm(
+    label: String,
+    fields: List<FieldForm>,
+    graphMin: String,
+    graphMax: String,
+    locale: Locale,
+): String? {
     if (label.isBlank()) return "Label is required."
     if (fields.isEmpty()) return "At least one field is required."
     if (fields.any { it.label.isBlank() }) return "Each field needs a label."
+    if (graphMin.isBlank() || graphMax.isBlank()) return "Graph min and max are required."
+    val min = parseLocaleNumber(graphMin, locale)
+    val max = parseLocaleNumber(graphMax, locale)
+    if (min == null || max == null) return "Graph min and max must be numbers."
+    if (min >= max) return "Graph min must be less than max."
     return null
 }
 
@@ -186,7 +205,9 @@ class AppViewModel(
                 metricsSub = MetricsSub.Add,
                 entryMetricId = null,
                 addLabel = "",
-                addFields = listOf(FieldForm()),
+                addFields = listOf(FieldForm(color = SERIES_COLORS[0])),
+                addGraphMin = "",
+                addGraphMax = "",
                 formError = null,
             )
         }
@@ -194,14 +215,22 @@ class AppViewModel(
 
     fun openEditMetric(id: String) {
         val metric = _state.value.snapshot.metrics.find { it.id == id } ?: return
+        val range = resolvedGraphRange(metric)
         _state.update {
             it.copy(
                 metricsSub = MetricsSub.Edit,
                 entryMetricId = id,
                 addLabel = metric.label,
                 addFields = metric.fields.map { field ->
-                    FieldForm(id = field.id, label = field.label, unit = field.unit)
+                    FieldForm(
+                        id = field.id,
+                        label = field.label,
+                        unit = field.unit,
+                        color = resolvedFieldColor(field),
+                    )
                 },
+                addGraphMin = range?.let { r -> formatLocaleNumber(r.first, locale) } ?: "",
+                addGraphMax = range?.let { r -> formatLocaleNumber(r.second, locale) } ?: "",
                 formError = null,
             )
         }
@@ -399,6 +428,14 @@ class AppViewModel(
         _state.update { it.copy(addLabel = value, formError = null) }
     }
 
+    fun setAddGraphMin(value: String) {
+        _state.update { it.copy(addGraphMin = value, formError = null) }
+    }
+
+    fun setAddGraphMax(value: String) {
+        _state.update { it.copy(addGraphMax = value, formError = null) }
+    }
+
     fun setFieldLabel(index: Int, value: String) {
         _state.update { s ->
             s.copy(
@@ -421,10 +458,25 @@ class AppViewModel(
         }
     }
 
+    fun setFieldColor(index: Int, color: Int) {
+        _state.update { s ->
+            s.copy(
+                addFields = s.addFields.mapIndexed { i, field ->
+                    if (i == index) field.copy(color = color) else field
+                },
+                formError = null,
+            )
+        }
+    }
+
     fun addField() {
         _state.update { s ->
             if (s.metricsSub != MetricsSub.Add) s
-            else s.copy(addFields = s.addFields + FieldForm())
+            else s.copy(
+                addFields = s.addFields + FieldForm(
+                    color = SERIES_COLORS[s.addFields.size % SERIES_COLORS.size],
+                ),
+            )
         }
     }
 
@@ -437,11 +489,19 @@ class AppViewModel(
 
     fun saveMetric() {
         val current = _state.value
-        val error = validateMetricForm(current.addLabel, current.addFields)
+        val error = validateMetricForm(
+            current.addLabel,
+            current.addFields,
+            current.addGraphMin,
+            current.addGraphMax,
+            locale,
+        )
         if (error != null) {
             _state.update { it.copy(formError = error) }
             return
         }
+        val graphMin = parseLocaleNumber(current.addGraphMin, locale) ?: return
+        val graphMax = parseLocaleNumber(current.addGraphMax, locale) ?: return
         val sub = current.metricsSub
         val label = current.addLabel.trim()
         val drafts = current.addFields
@@ -459,8 +519,11 @@ class AppViewModel(
                                         id = UUID.randomUUID().toString(),
                                         label = draft.label.trim(),
                                         unit = draft.unit.trim(),
+                                        color = draft.color,
                                     )
                                 },
+                                graphMin = graphMin,
+                                graphMax = graphMax,
                             ),
                         )
                     }
@@ -471,7 +534,11 @@ class AppViewModel(
                             mergeEditedMetric(
                                 existing,
                                 label,
-                                drafts.map { it.label.trim() to it.unit.trim() },
+                                drafts.map {
+                                    FieldEdit(it.label.trim(), it.unit.trim(), it.color)
+                                },
+                                graphMin,
+                                graphMax,
                             ),
                         )
                     }
@@ -487,6 +554,8 @@ class AppViewModel(
                         entryMetricId = null,
                         addLabel = "",
                         addFields = listOf(FieldForm()),
+                        addGraphMin = "",
+                        addGraphMax = "",
                     )
                 }
             } catch (e: Exception) {
@@ -519,6 +588,8 @@ class AppViewModel(
                         entryError = if (editingGone) null else prev.entryError,
                         addLabel = if (editingGone) "" else prev.addLabel,
                         addFields = if (editingGone) listOf(FieldForm()) else prev.addFields,
+                        addGraphMin = if (editingGone) "" else prev.addGraphMin,
+                        addGraphMax = if (editingGone) "" else prev.addGraphMax,
                         formError = if (editingGone) null else prev.formError,
                     )
                 }
@@ -766,6 +837,8 @@ class AppViewModel(
         todayError = null,
         addLabel = "",
         addFields = listOf(FieldForm()),
+        addGraphMin = "",
+        addGraphMax = "",
         graphSelectedIds = defaultSelectedMetricIds(snap.metrics, snap.samples).toSet(),
     )
 }
