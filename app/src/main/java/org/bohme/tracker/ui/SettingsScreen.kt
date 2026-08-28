@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -28,6 +29,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import java.time.Instant
+import org.bohme.tracker.data.MetricDef
+import org.bohme.tracker.data.Sample
+import org.bohme.tracker.stats.formatSampleValues
 
 @Composable
 fun SettingsScreen(
@@ -43,6 +47,11 @@ fun SettingsScreen(
     davInFlight: Boolean,
     restoreNeedsExtraConfirm: Boolean,
     showReset: Boolean,
+    metrics: List<MetricDef>,
+    samples: List<Sample>,
+    onAddMetric: () -> Unit,
+    onEditMetric: (String) -> Unit,
+    onDeleteMetric: (String) -> Unit,
     onUrlChange: (String) -> Unit,
     onUserChange: (String) -> Unit,
     onPassChange: (String) -> Unit,
@@ -58,6 +67,7 @@ fun SettingsScreen(
     var confirmRestore by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var replaceLocked by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(restoreNeedsExtraConfirm) {
         if (restoreNeedsExtraConfirm) replaceLocked = false
     }
@@ -67,7 +77,29 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        Text("Prefer https.")
+        Text("Metric Management")
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onAddMetric,
+            modifier = Modifier.fillMaxWidth().testTag("btn-settings-add-metric"),
+        ) { Text("Add metric") }
+        Spacer(Modifier.height(8.dp))
+        if (metrics.isNotEmpty()) {
+            metrics.forEach { metric ->
+                val last = samples.filter { it.metricId == metric.id }.maxByOrNull { it.recordedAt }
+                MetricManagementRow(
+                    metric = metric,
+                    last = last,
+                    onEdit = { onEditMetric(metric.id) },
+                    onDelete = { pendingDelete = metric.id },
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            }
+        } else {
+            Text("No metrics yet.", style = MaterialTheme.typography.bodyMedium)
+        }
+        Spacer(Modifier.height(24.dp))
+        HorizontalDivider()
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = url,
@@ -211,5 +243,59 @@ fun SettingsScreen(
                 TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
             },
         )
+    }
+    val deletingId = pendingDelete
+    if (deletingId != null) {
+        val metric = metrics.find { it.id == deletingId }
+        if (metric != null) {
+            val n = samples.count { it.metricId == deletingId }
+            AlertDialog(
+                onDismissRequest = { pendingDelete = null },
+                text = { Text("Delete ${metric.label} and $n sample(s)? This cannot be undone.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onDeleteMetric(deletingId)
+                            pendingDelete = null
+                        },
+                    ) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetricManagementRow(
+    metric: MetricDef,
+    last: Sample?,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .testTag("metric-row-${metric.id}")
+                .padding(end = 8.dp),
+        ) {
+            Text(metric.label, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (last == null) "No samples" else formatSampleValues(metric, last),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        TextButton(onClick = onEdit, modifier = Modifier.testTag("metric-edit-${metric.id}")) {
+            Text("Edit")
+        }
+        TextButton(onClick = onDelete, modifier = Modifier.testTag("metric-delete-${metric.id}")) {
+            Text("Delete")
+        }
     }
 }

@@ -202,6 +202,7 @@ class AppViewModel(
     fun openAddMetric() {
         _state.update {
             it.copy(
+                tab = Tab.Metrics,
                 metricsSub = MetricsSub.Add,
                 entryMetricId = null,
                 addLabel = "",
@@ -218,6 +219,7 @@ class AppViewModel(
         val range = resolvedGraphRange(metric)
         _state.update {
             it.copy(
+                tab = Tab.Metrics,
                 metricsSub = MetricsSub.Edit,
                 entryMetricId = id,
                 addLabel = metric.label,

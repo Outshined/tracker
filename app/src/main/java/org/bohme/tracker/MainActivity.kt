@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -70,19 +74,15 @@ private fun TrackerScaffold(vm: AppViewModel) {
                     }
                 },
                 actions = {
-                    if (
-                        state.tab == Tab.Metrics &&
-                        state.metricsSub == MetricsSub.List &&
-                        state.load is LoadState.Ready
-                    ) {
+                    if (state.load is LoadState.Ready) {
+                        IconButton(
+                            onClick = { vm.selectTab(Tab.Settings) },
+                            modifier = Modifier.testTag("btn-settings"),
+                        ) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
                         TextButton(
                             onClick = { vm.openToday() },
                             modifier = Modifier.testTag("btn-today"),
                         ) { Text("Today") }
-                        TextButton(
-                            onClick = { vm.openAddMetric() },
-                            modifier = Modifier.testTag("btn-add-metric"),
-                        ) { Text("Add metric") }
                     }
                 },
             )
@@ -181,8 +181,6 @@ private fun MetricsTab(vm: AppViewModel, state: AppUiState) {
             samples = state.snapshot.samples,
             zone = vm.zone,
             onOpenEntry = { vm.openEntry(it) },
-            onEdit = { vm.openEditMetric(it) },
-            onDelete = { vm.deleteMetric(it) },
         )
         MetricsSub.Add, MetricsSub.Edit -> AddMetricScreen(
             label = state.addLabel,
@@ -246,6 +244,11 @@ private fun SettingsTab(vm: AppViewModel, state: AppUiState) {
         davInFlight = state.davInFlight,
         restoreNeedsExtraConfirm = state.restoreNeedsExtraConfirm,
         showReset = state.load is LoadState.Corrupt,
+        metrics = state.snapshot.metrics,
+        samples = state.snapshot.samples,
+        onAddMetric = { vm.openAddMetric() },
+        onEditMetric = { vm.openEditMetric(it) },
+        onDeleteMetric = { vm.deleteMetric(it) },
         onUrlChange = { vm.setSettingsUrl(it) },
         onUserChange = { vm.setSettingsUser(it) },
         onPassChange = { vm.setSettingsPass(it) },

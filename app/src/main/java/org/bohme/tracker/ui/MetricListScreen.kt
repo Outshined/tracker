@@ -8,16 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -35,11 +29,8 @@ fun MetricListScreen(
     samples: List<Sample>,
     zone: ZoneId,
     onOpenEntry: (String) -> Unit,
-    onEdit: (String) -> Unit,
-    onDelete: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var pendingDelete by remember { mutableStateOf<MetricDef?>(null) }
     LazyColumn(modifier = modifier.fillMaxSize().padding(16.dp)) {
         items(metrics, key = { it.id }) { metric ->
             val last = samples.filter { it.metricId == metric.id }.maxByOrNull { it.recordedAt }
@@ -48,30 +39,9 @@ fun MetricListScreen(
                 last = last,
                 zone = zone,
                 onOpenEntry = { onOpenEntry(metric.id) },
-                onEdit = { onEdit(metric.id) },
-                onDelete = { pendingDelete = metric },
             )
             HorizontalDivider()
         }
-    }
-    val deleting = pendingDelete
-    if (deleting != null) {
-        val n = samples.count { it.metricId == deleting.id }
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            text = { Text("Delete ${deleting.label} and $n sample(s)? This cannot be undone.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDelete(deleting.id)
-                        pendingDelete = null
-                    },
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
-            },
-        )
     }
 }
 
@@ -81,8 +51,6 @@ private fun MetricRow(
     last: Sample?,
     zone: ZoneId,
     onOpenEntry: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -90,7 +58,7 @@ private fun MetricRow(
     ) {
         Column(
             modifier = Modifier
-                .weight(1f)
+                .fillMaxWidth()
                 .testTag("metric-row-${metric.id}")
                 .clickable(onClick = onOpenEntry)
                 .padding(end = 8.dp),
@@ -106,12 +74,6 @@ private fun MetricRow(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-        }
-        TextButton(onClick = onEdit, modifier = Modifier.testTag("metric-edit-${metric.id}")) {
-            Text("Edit")
-        }
-        TextButton(onClick = onDelete, modifier = Modifier.testTag("metric-delete-${metric.id}")) {
-            Text("Delete")
         }
     }
 }

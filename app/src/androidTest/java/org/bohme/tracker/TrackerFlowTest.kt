@@ -33,7 +33,7 @@ class TrackerFlowTest {
     fun todayButtonVisibleOnListOpensToday() {
         awaitReady()
         composeRule.onNodeWithTag("btn-today").assertIsDisplayed()
-        composeRule.onNodeWithTag("btn-add-metric").assertIsDisplayed()
+        composeRule.onNodeWithTag("btn-settings").assertIsDisplayed()
         composeRule.onNodeWithTag("btn-today").performClick()
         waitForTag("today-field-weight-lb")
         composeRule.onNodeWithTag("today-field-weight-lb").assertIsDisplayed()
@@ -68,12 +68,15 @@ class TrackerFlowTest {
     @Test
     fun addMetricSaveAppearsOnList() {
         awaitReady()
-        composeRule.onNodeWithTag("btn-add-metric").performClick()
+        composeRule.onNodeWithTag("btn-settings").performClick()
+        waitForTag("btn-settings-add-metric")
+        composeRule.onNodeWithTag("btn-settings-add-metric").performClick()
         composeRule.onNodeWithTag("field-metric-label").performTextInput("Steps")
         composeRule.onNodeWithTag("field-field-label-0").performTextInput("Count")
         composeRule.onNodeWithTag("field-graph-min").performTextInput("0")
         composeRule.onNodeWithTag("field-graph-max").performTextInput("10000")
         composeRule.onNodeWithTag("btn-save-metric").performScrollTo().performClick()
+        composeRule.onNodeWithTag("tab-Metrics").performClick()
         waitForText("Steps")
         composeRule.onNodeWithText("Steps").assertIsDisplayed()
     }
@@ -81,7 +84,8 @@ class TrackerFlowTest {
     @Test
     fun addMetricBlankLabelShowsErrorStaysOnAdd() {
         awaitReady()
-        composeRule.onNodeWithTag("btn-add-metric").performClick()
+        composeRule.onNodeWithTag("btn-settings").performClick()
+        composeRule.onNodeWithTag("btn-settings-add-metric").performClick()
         composeRule.onNodeWithTag("btn-save-metric").performClick()
         composeRule.onNodeWithText("Label is required.").assertIsDisplayed()
         composeRule.onNodeWithTag("field-metric-label").assertIsDisplayed()
@@ -91,10 +95,12 @@ class TrackerFlowTest {
     @Test
     fun editWeightUnitSaveListStillWeight() {
         awaitReady()
+        composeRule.onNodeWithTag("btn-settings").performClick()
         composeRule.onNodeWithTag("metric-edit-weight").performClick()
         waitForTag("field-field-unit-0")
         composeRule.onNodeWithTag("field-field-unit-0").performTextReplacement("kg")
         composeRule.onNodeWithTag("btn-save-metric").performClick()
+        composeRule.onNodeWithTag("tab-Metrics").performClick()
         waitForTag("metric-row-weight")
         composeRule.onNodeWithText("Weight").assertIsDisplayed()
     }
@@ -102,6 +108,7 @@ class TrackerFlowTest {
     @Test
     fun editMetricCannotAddOrRemoveFields() {
         awaitReady()
+        composeRule.onNodeWithTag("btn-settings").performClick()
         composeRule.onNodeWithTag("metric-edit-weight").performClick()
         waitForTag("field-metric-label")
         composeRule.onAllNodesWithTag("btn-add-field").assertCountEquals(0)
@@ -111,6 +118,7 @@ class TrackerFlowTest {
     @Test
     fun deleteMetricCancelKeepsConfirmRemoves() {
         awaitReady()
+        composeRule.onNodeWithTag("btn-settings").performClick()
         composeRule.onNodeWithTag("metric-delete-bhb").performClick()
         composeRule.onNodeWithText("Cancel").performClick()
         composeRule.onNodeWithText("BHB").assertIsDisplayed()
@@ -234,9 +242,11 @@ class TrackerFlowTest {
         openWeightEntry()
         composeRule.onNodeWithTag("btn-back").performClick()
         waitForTag("metric-row-weight")
-        composeRule.onNodeWithTag("btn-add-metric").performClick()
+        composeRule.onNodeWithTag("btn-settings").performClick()
+        composeRule.onNodeWithTag("btn-settings-add-metric").performClick()
         waitForTag("field-metric-label")
         composeRule.onNodeWithTag("btn-back").performClick()
+        composeRule.onNodeWithTag("tab-Metrics").performClick()
         waitForTag("metric-row-weight")
         composeRule.onNodeWithText("Weight").assertIsDisplayed()
     }
@@ -343,7 +353,10 @@ class TrackerCorruptFlowTest {
             "Local data file is unreadable. Restore from WebDAV or Reset local data.",
         ).assertIsDisplayed()
         composeRule.onNodeWithTag("tab-Settings").performClick()
-        composeRule.onAllNodesWithText("Reset local data").onLast().assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("Reset local data").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodesWithText("Reset local data").onLast().performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Reset local data").onLast().performClick()
         composeRule.onNodeWithText(
             "Discard unreadable local files (kept as store.json.corrupt) and start empty with built-in metrics?",
@@ -352,7 +365,11 @@ class TrackerCorruptFlowTest {
         composeRule.onNodeWithText(
             "Local data file is unreadable. Restore from WebDAV or Reset local data.",
         ).assertIsDisplayed()
-        composeRule.onAllNodesWithText("Reset local data").onLast().performClick()
+        composeRule.onNodeWithTag("tab-Settings").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithText("Reset local data").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onAllNodesWithText("Reset local data").onLast().performScrollTo().performClick()
         composeRule.onNodeWithText("Reset").performClick()
         composeRule.onNodeWithTag("tab-Metrics").performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {

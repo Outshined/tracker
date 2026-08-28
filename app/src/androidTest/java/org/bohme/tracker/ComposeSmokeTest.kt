@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -71,12 +72,9 @@ class ComposeSmokeTest {
     @Test
     fun `T-settings-backup-and-restore-open-confirm-dialogs`() {
         awaitReady()
-        composeRule.onNodeWithText("Settings").performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("Backup now").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithText("Backup now").assertIsDisplayed()
-        composeRule.onNodeWithText("Restore now").assertIsDisplayed()
+        composeRule.onNodeWithTag("btn-settings").performClick()
+        composeRule.onNodeWithText("Backup now").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Restore now").performScrollTo().assertIsDisplayed()
         composeRule.onNode(hasText("WebDAV URL") and hasSetTextAction())
             .performTextInput("https://example.com/remote.php/dav/files/paul/tracker.json")
         composeRule.onNode(hasText("Username") and hasSetTextAction()).performTextInput("paul")

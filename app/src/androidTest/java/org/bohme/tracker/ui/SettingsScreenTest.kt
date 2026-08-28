@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.bohme.tracker.data.BuiltInMetrics
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -46,6 +47,11 @@ class SettingsScreenTest {
                     davInFlight = false,
                     restoreNeedsExtraConfirm = false,
                     showReset = false,
+                    metrics = BuiltInMetrics.ALL,
+                    samples = emptyList(),
+                    onAddMetric = {},
+                    onEditMetric = {},
+                    onDeleteMetric = {},
                     onUrlChange = { url = it },
                     onUserChange = { user = it },
                     onPassChange = { pass = it },
@@ -186,6 +192,11 @@ private fun defaultSettings(
         davInFlight = false,
         restoreNeedsExtraConfirm = restoreNeedsExtraConfirm,
         showReset = showReset,
+        metrics = BuiltInMetrics.ALL,
+        samples = emptyList(),
+        onAddMetric = {},
+        onEditMetric = {},
+        onDeleteMetric = {},
         onUrlChange = {},
         onUserChange = {},
         onPassChange = {},
