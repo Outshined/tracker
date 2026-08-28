@@ -29,8 +29,6 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties # gitignored; once per clone
 ./gradlew :app:assembleDebug
 ```
 
-Do **not** use Arch's `/usr/bin/gradle` (it is missing `gradle-public-api-legacy`). `./gradlew` uses Gradle **9.7.0**. If the environment has `GRADLE_HOME=/usr/share/java/gradle`, the wrapper unsets it.
-
 APK after a successful build:
 
 `app/build/outputs/apk/debug/app-debug.apk`

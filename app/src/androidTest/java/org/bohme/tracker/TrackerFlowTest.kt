@@ -277,7 +277,7 @@ class TrackerFlowTest {
     @Test
     fun settingsBackupAndRestoreConfirmCancel() {
         awaitReady()
-        composeRule.onNodeWithTag("tab-Settings").performClick()
+        composeRule.onNodeWithTag("btn-settings").performClick()
         waitForTag("field-dav-url")
         composeRule.onNodeWithTag("field-dav-url")
             .performTextInput("https://example.com/remote.php/dav/files/paul/tracker.json")
@@ -297,7 +297,7 @@ class TrackerFlowTest {
     @Test
     fun settingsInsecureTlsToggle() {
         awaitReady()
-        composeRule.onNodeWithTag("tab-Settings").performClick()
+        composeRule.onNodeWithTag("btn-settings").performClick()
         waitForTag("check-insecure-tls")
         composeRule.onNodeWithTag("check-insecure-tls").performClick()
         composeRule.onNodeWithTag("check-insecure-tls").performClick()
@@ -307,7 +307,7 @@ class TrackerFlowTest {
     @Test
     fun settingsPasswordFieldAcceptsInput() {
         awaitReady()
-        composeRule.onNodeWithTag("tab-Settings").performClick()
+        composeRule.onNodeWithTag("btn-settings").performClick()
         waitForTag("field-dav-pass")
         composeRule.onNodeWithTag("field-dav-pass").performTextInput("secret")
         composeRule.onNodeWithTag("field-dav-pass").assertIsDisplayed()
@@ -352,24 +352,12 @@ class TrackerCorruptFlowTest {
         composeRule.onNodeWithText(
             "Local data file is unreadable. Restore from WebDAV or Reset local data.",
         ).assertIsDisplayed()
-        composeRule.onNodeWithTag("tab-Settings").performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("Reset local data").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onAllNodesWithText("Reset local data").onLast().performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Reset local data").onLast().performClick()
         composeRule.onNodeWithText(
             "Discard unreadable local files (kept as store.json.corrupt) and start empty with built-in metrics?",
         ).assertIsDisplayed()
         composeRule.onNodeWithText("Cancel").performClick()
-        composeRule.onNodeWithText(
-            "Local data file is unreadable. Restore from WebDAV or Reset local data.",
-        ).assertIsDisplayed()
-        composeRule.onNodeWithTag("tab-Settings").performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithText("Reset local data").fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onAllNodesWithText("Reset local data").onLast().performScrollTo().performClick()
+        composeRule.onAllNodesWithText("Reset local data").onLast().performClick()
         composeRule.onNodeWithText("Reset").performClick()
         composeRule.onNodeWithTag("tab-Metrics").performClick()
         composeRule.waitUntil(timeoutMillis = 10_000) {

@@ -89,7 +89,7 @@ private fun TrackerScaffold(vm: AppViewModel) {
         },
         bottomBar = {
             NavigationBar {
-                Tab.entries.forEach { tab ->
+                Tab.entries.filter { it != Tab.Settings }.forEach { tab ->
                     NavigationBarItem(
                         selected = state.tab == tab,
                         onClick = { vm.selectTab(tab) },
