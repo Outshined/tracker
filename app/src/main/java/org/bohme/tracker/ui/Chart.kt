@@ -22,6 +22,7 @@ import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.time.Instant
+import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -33,6 +34,7 @@ import org.bohme.tracker.data.FieldDef
 import org.bohme.tracker.data.MetricDef
 import org.bohme.tracker.data.lightenArgb
 import org.bohme.tracker.stats.Point
+import org.bohme.tracker.stats.verticalGridInstants
 
 val SERIES_COLORS = intArrayOf(
     0xFF1F77B4.toInt(), 0xFFFF7F0E.toInt(), 0xFF2CA02C.toInt(), 0xFFD62728.toInt(),
@@ -204,6 +206,7 @@ fun Chart(
     means: List<Series>,
     start: Instant,
     end: Instant,
+    zone: ZoneId,
     modifier: Modifier = Modifier,
     yMin: Double? = null,
     yMax: Double? = null,
@@ -255,6 +258,16 @@ fun Chart(
                     color = gridColor,
                     start = Offset(padLeftPx, y),
                     end = Offset(w - padPx, y),
+                    strokeWidth = gridStroke,
+                )
+            }
+            val span = (end.toEpochMilli() - start.toEpochMilli()).toDouble()
+            for (t in verticalGridInstants(start, end, zone)) {
+                val x = padLeftPx + ((t.toEpochMilli() - start.toEpochMilli()) / span).toFloat() * innerW
+                drawLine(
+                    color = gridColor,
+                    start = Offset(x, padPx),
+                    end = Offset(x, h - padPx),
                     strokeWidth = gridStroke,
                 )
             }

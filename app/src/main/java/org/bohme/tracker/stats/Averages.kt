@@ -103,3 +103,37 @@ fun bucketMeans(
         .map { acc -> Point(maxOf(acc.origin, start), acc.sum / acc.n) }
         .sortedBy { it.t }
 }
+
+fun verticalGridInstants(start: Instant, end: Instant, zone: ZoneId): List<Instant> {
+    if (!end.isAfter(start)) return emptyList()
+    val startDate = start.atZone(zone).toLocalDate()
+    val monthCutoff = startDate.plusMonths(3).atStartOfDay(zone).toInstant()
+    val out = ArrayList<Instant>()
+    if (end.isAfter(monthCutoff)) {
+        var month = YearMonth.from(startDate)
+        var t = month.atDay(1).atStartOfDay(zone).toInstant()
+        if (t.isBefore(start)) {
+            month = month.plusMonths(1)
+            t = month.atDay(1).atStartOfDay(zone).toInstant()
+        }
+        while (t.isBefore(end)) {
+            out.add(t)
+            month = month.plusMonths(1)
+            t = month.atDay(1).atStartOfDay(zone).toInstant()
+        }
+    } else {
+        var monday = startDate.with(DayOfWeek.MONDAY)
+        if (monday.isBefore(startDate)) monday = monday.plusWeeks(1)
+        var t = monday.atStartOfDay(zone).toInstant()
+        if (t.isBefore(start)) {
+            monday = monday.plusWeeks(1)
+            t = monday.atStartOfDay(zone).toInstant()
+        }
+        while (t.isBefore(end)) {
+            out.add(t)
+            monday = monday.plusWeeks(1)
+            t = monday.atStartOfDay(zone).toInstant()
+        }
+    }
+    return out
+}

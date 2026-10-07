@@ -287,6 +287,70 @@ class AveragesTest {
         assertEquals(pad, p.x, 0.01f)
     }
 
+    @Test
+    fun `verticalGridInstants New York August is Mondays at 04_00Z and omits end`() {
+        val start = Instant.parse("2026-08-01T04:00:00Z")
+        val end = Instant.parse("2026-08-31T04:00:00Z")
+        assertEquals(
+            listOf(
+                Instant.parse("2026-08-03T04:00:00Z"),
+                Instant.parse("2026-08-10T04:00:00Z"),
+                Instant.parse("2026-08-17T04:00:00Z"),
+                Instant.parse("2026-08-24T04:00:00Z"),
+            ),
+            verticalGridInstants(start, end, ny),
+        )
+    }
+
+    @Test
+    fun `verticalGridInstants New York past three months is month starts not Mondays`() {
+        val start = Instant.parse("2026-01-01T05:00:00Z")
+        val end = Instant.parse("2026-07-01T04:00:00Z")
+        val got = verticalGridInstants(start, end, ny)
+        assertEquals(
+            listOf(
+                LocalDate.of(2026, 1, 1),
+                LocalDate.of(2026, 2, 1),
+                LocalDate.of(2026, 3, 1),
+                LocalDate.of(2026, 4, 1),
+                LocalDate.of(2026, 5, 1),
+                LocalDate.of(2026, 6, 1),
+            ).map { it.atStartOfDay(ny).toInstant() },
+            got,
+        )
+        assertFalse(got.contains(Instant.parse("2026-01-05T05:00:00Z")))
+        assertFalse(got.contains(end))
+    }
+
+    @Test
+    fun `verticalGridInstants New York Tuesday through Friday is empty`() {
+        val start = Instant.parse("2026-08-04T04:00:00Z")
+        val end = Instant.parse("2026-08-07T04:00:00Z")
+        assertEquals(emptyList<Instant>(), verticalGridInstants(start, end, ny))
+    }
+
+    @Test
+    fun `verticalGridInstants stays on Mondays when end equals the three month cutoff`() {
+        val start = Instant.parse("2026-01-01T05:00:00Z")
+        val cutoff = LocalDate.of(2026, 1, 1).plusMonths(3).atStartOfDay(ny).toInstant()
+        assertEquals(Instant.parse("2026-04-01T04:00:00Z"), cutoff)
+        val mondays = verticalGridInstants(start, cutoff, ny)
+        assertTrue(mondays.contains(Instant.parse("2026-01-05T05:00:00Z")))
+        assertFalse(mondays.contains(Instant.parse("2026-02-01T05:00:00Z")))
+        assertFalse(mondays.contains(cutoff))
+        val months = verticalGridInstants(start, cutoff.plusNanos(1), ny)
+        assertEquals(
+            listOf(
+                LocalDate.of(2026, 1, 1),
+                LocalDate.of(2026, 2, 1),
+                LocalDate.of(2026, 3, 1),
+                LocalDate.of(2026, 4, 1),
+            ).map { it.atStartOfDay(ny).toInstant() },
+            months,
+        )
+        assertFalse(months.contains(Instant.parse("2026-01-05T05:00:00Z")))
+    }
+
     private fun sample(metricId: String, values: Map<String, Double>, recordedAt: Instant): Sample =
         Sample(
             id = "s-$metricId-${recordedAt.toEpochMilli()}",

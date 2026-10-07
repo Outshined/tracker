@@ -197,6 +197,7 @@ fun GraphScreen(
                 means = means,
                 start = start ?: Instant.EPOCH,
                 end = end ?: Instant.EPOCH,
+                zone = zone,
                 yMin = yRange?.first,
                 yMax = yRange?.second,
             )
