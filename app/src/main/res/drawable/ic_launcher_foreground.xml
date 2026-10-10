@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- White pulse/heartbeat waveform centered in safe zone -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M24,54 L36,54 L44,34 L52,74 L60,42 L68,54 L84,54" />
+    <!-- Yellow lock overlapping right side -->
+    <path
+        android:fillColor="#FFCC00"
+        android:pathData="M68,48 C68,40 74,36 80,36 C86,36 92,40 92,48 L92,52 L96,52 L96,70 C96,74 92,78 88,78 L72,78 C68,78 64,74 64,70 L64,52 L68,52 Z" />
+    <path
+        android:fillColor="#0D7377"
+        android:pathData="M76,56 A3,3 0 1,1 82,56 A3,3 0 1,1 76,56 Z M77,58 L81,58 L81,64 L77,64 Z" />
+</vector>
